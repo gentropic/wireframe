@@ -1,13 +1,14 @@
 # wireframe
 
-**`.wfr`** — a single-file container for large triangle meshes (topography, pit shells, geological
-surfaces and solids), designed to be read without ever being held whole in memory.
+**`.wfr`** — a single-file container for large spatial elements (triangle meshes such as
+topography, pit shells and geological solids; line networks such as design strings and contours;
+point sets), designed to be read without ever being held whole in memory.
 
-- **One file, many meshes.** A `.wfr` is a ZIP archive with every member stored uncompressed, so
+- **One file, many elements.** A `.wfr` is a ZIP archive with every member stored uncompressed, so
   any member can be read by byte range.
-- **Bricks.** Faces are sorted spatially and cut into bricks. Brick *k* is row group *k* of both
-  the vertex table and the face table, and it is self-contained: its faces index only its own
-  vertices.
+- **Bricks.** Cells (faces or segments) are sorted spatially and cut into bricks. Brick *k* is row
+  group *k* of both the vertex table and the cell table, and it is self-contained: its cells index
+  only its own vertices.
 - **Pushdown from stock Parquet.** Vertices sit on an integer grid, so each row group's ordinary
   min/max statistics are that brick's bounding box. A spatial query skips bricks using the
   footer alone.
