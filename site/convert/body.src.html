@@ -1,0 +1,17 @@
+<main>
+<h1 class="mono">convert to .wfr</h1>
+<p class="note">PLY (ascii or binary), OBJ and DXF (3DFACE/polyface surfaces, polylines, points) become one .wfr, converted entirely in this page — nothing is uploaded. Indexed meshes keep their vertex identity and attributes; DXF triangles are welded by position and keep their layer and colour.</p>
+<label class="drop" id="drop">drop files here, or click to choose<input type="file" id="pick" multiple accept=".ply,.obj,.dxf"></label>
+<ul class="files" id="files"></ul>
+<div class="opts">
+<label for="outName">output</label><input type="text" id="outName" value="converted.wfr" spellcheck="false">
+<label for="step">coordinates</label><select id="step"><option value="1e-4">0.1 mm grid</option><option value="1e-3">1 mm grid</option><option value="1e-2">1 cm grid</option><option value="f64">lossless (float64)</option></select>
+<label for="budget">memory</label><select id="budget"><option value="256">256 MB</option><option value="512" selected>512 MB</option><option value="1024">1 GB</option><option value="2048">2 GB</option></select>
+<label for="topo">topology</label><span><input type="checkbox" id="topo"> verify (closed · oriented · manifold · volume)</span>
+</div>
+<div class="row"><button class="go" id="go" disabled>Convert</button><button class="sec" id="cancel" disabled>Cancel</button></div>
+<div class="bar"><div id="fill"></div></div>
+<div class="status" id="status"></div>
+<div class="result" id="result" hidden></div>
+<p class="note">Memory past the budget spills to your browser's private storage and is cleared afterwards. Where the browser offers a save dialog, the file is written straight to disk as it is produced; otherwise it downloads at the end. Check the result in the <a href="../inspect/">inspector</a>.</p>
+</main>

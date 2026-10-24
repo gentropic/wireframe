@@ -20,7 +20,7 @@ point sets), designed to be read without ever being held whole in memory.
   to scratch beyond a memory budget, and sorted by recursive partition. The budget changes how
   much is resident, never the output — a 64 MB budget and an unlimited one write the same bytes.
 
-The format of record is [SPEC.md](SPEC.md). Status: **draft 0.1**. The JS library reads and writes
+Site: **[gentropic.org/wireframe](https://gentropic.org/wireframe/)** — the spec, an in-browser converter and an inspector. The format of record is [SPEC.md](SPEC.md). Status: **draft 0.1**. The JS library reads and writes
 it; the Python package is next.
 
 ## Converting

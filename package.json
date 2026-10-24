@@ -8,10 +8,13 @@
     "bench:read": "node bench/read.mjs",
     "wfr": "node js/cli.mjs",
     "test": "node --test \"js/test/*.test.mjs\"",
-    "conformance": "uv run --no-project --with pyarrow --with numpy python conformance/pyarrow_check.py && node conformance/read_pyarrow.mjs"
+    "conformance": "uv run --no-project --with pyarrow --with numpy python conformance/pyarrow_check.py && node conformance/read_pyarrow.mjs",
+    "site:build": "node site/build.mjs",
+    "site:smoke": "node site/smoke.mjs"
   },
   "devDependencies": {
     "@gcu/dxf": "file:../auditable/ext/dxf",
-    "hyparquet": "1.26.2"
+    "hyparquet": "1.26.2",
+    "playwright": "^1.60.0"
   }
 }

@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>wireframe 0.1 — specification</title>
+<meta name="description" content="The .wfr wireframe format, version 0.1.">
+<link rel="icon" type="image/svg+xml" href="../assets/icon.svg">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="../assets/switchboard.css">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<header class="top"><a class="brand" href="../">wireframe <span>.wfr</span></a>
+<nav><a href="../0.1/">spec</a><a href="../convert/">convert</a><a href="../inspect/">inspect</a><a href="https://github.com/gentropic/wireframe">source</a><button class="theme" id="themeToggle" title="light / dark">◐</button></nav></header>
+<main class="spec"><aside class="toc"><div class="toc-h">contents</div><a href="#1-overview">1. Overview</a><a href="#2-conventions">2. Conventions</a><a href="#3-container">3. Container</a><a href="#4-manifest-wireframejson">4. Manifest — <code>wireframe.json</code></a><a href="#5-element-kinds">5. Element kinds</a><a href="#6-vertex-table-verticesparquet">6. Vertex table — <code>&lt;path&gt;vertices.parquet</code></a><a href="#7-cell-table-cellsparquet">7. Cell table — <code>&lt;path&gt;cells.parquet</code></a><a href="#8-attributes">8. Attributes</a><a href="#9-meta">9. <code>meta</code></a><a href="#10-integrity-and-signing">10. Integrity and signing</a><a href="#11-core-column-constraints">11. Core-column constraints</a><a href="#12-reserved">12. Reserved</a><a href="#13-reading-by-region-informative">13. Reading by region (informative)</a><a href="#14-candidates-for-02">14. Candidates for 0.2</a></aside><article class="doc">
+<p class="stamp">snapshot of SPEC.md @ gentropic/wireframe 0682659 · <a href="https://github.com/gentropic/wireframe/blob/main/SPEC.md">latest on GitHub</a></p>
+<h1 id="the-wireframe-format-wfr-version-01-draft">The wireframe format (<code>.wfr</code>) — version 0.1 (draft)</h1>
+<p>A <code>.wfr</code> file holds one or more spatial <strong>elements</strong> — point sets, line networks, triangle meshes —
+laid out to be read by byte range: open a multi-gigabyte file, find the parts that intersect a
+query, decode only those. Inside, every table is ordinary Apache Parquet and the container is an
+ordinary ZIP archive, so the contents remain usable with stock tools.</p>
+<p>The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are to be read as in RFC 2119. Sections
+marked <em>informative</em> explain or recommend; they impose no requirements.</p>
+<h2 id="1-overview">1. Overview</h2>
+<pre><code>file.wfr  (ZIP, every member STORED)
+├── mimetype                                  &quot;application/vnd.gentropic.wireframe&quot; — first
+├── elements/&lt;element&gt;/vertices.parquet       x, y, z, vid   — one row group per brick
+├── elements/&lt;element&gt;/cells.parquet          a, b[, c]      — one row group per brick (absent for points)
+├── elements/&lt;element&gt;/columns/&lt;location&gt;/…   attributes appended later (optional)
+├── lod/…                                     reserved
+├── textures/…                                reserved
+├── wireframe.json                            the manifest
+└── signature.json                            optional — last
+</code></pre>
+<p>An element is cut into <strong>bricks</strong> — spatially compact groups of about 64k cells. Brick <em>k</em> is row
+group <em>k</em> of the vertex table <strong>and</strong> row group <em>k</em> of the cell table, and its cells reference only
+its own vertex rows. To read a region, a reader picks the bricks whose bounding boxes intersect it
+and decodes those row groups. The bounding boxes are the min/max statistics Parquet already writes
+for <code>x</code>, <code>y</code>, <code>z</code>.</p>
+<p>The format defines what is needed to decode and trust the geometry. Everything else — dates,
+provenance, units, styling — is free-form <code>meta</code> (§9).</p>
+<h2 id="2-conventions">2. Conventions</h2>
+<ul>
+<li><strong>Axes.</strong> <code>x</code> = East, <code>y</code> = North, <code>z</code> = Up, in the file&#39;s <code>frame.units</code>.</li>
+<li><strong>Orientation.</strong> In a triangle element whose topology is <code>oriented</code>, a face <code>(a, b, c)</code> has its
+outward normal along <code>(B − A) × (C − A)</code> (right-hand rule): counter-clockwise seen from outside a
+solid, or from above a surface.</li>
+<li><strong>Integers.</strong> Parquet INT32/INT64 are signed; every index in this format is non-negative.</li>
+<li><strong>Text.</strong> UTF-8. JSON per RFC 8259.</li>
+</ul>
+<h2 id="3-container">3. Container</h2>
+<h3 id="31-zip-requirements">3.1 ZIP requirements</h3>
+<p>A <code>.wfr</code> is a ZIP archive (PKWARE APPNOTE 6.3.x) with these restrictions:</p>
+<ul>
+<li>Every member MUST use compression method 0 (stored).</li>
+<li>Members MUST NOT be encrypted. The archive MUST NOT be split or spanned.</li>
+<li>Member names MUST be UTF-8 (general-purpose flag bit 11), use <code>/</code> as separator, and contain no <code>.</code>
+or <code>..</code> segments, leading <code>/</code>, or drive letters.</li>
+<li>Writers MUST use Zip64 records when any size or offset exceeds 0xFFFFFFFF or there are more than
+65535 entries, and MAY use them unconditionally.</li>
+<li>Writers MAY use data descriptors (flag bit 3) to stream members to a non-seekable sink. <strong>Readers
+MUST take sizes and offsets from the central directory</strong>, never from local headers.</li>
+<li>CRC-32 values MUST be correct. Readers MAY skip CRC verification (§10 provides SHA-256).</li>
+</ul>
+<h3 id="32-alignment">3.2 Alignment</h3>
+<p>Except for <code>mimetype</code>, each member&#39;s data SHOULD begin at a file offset that is a multiple of 64.
+Writers achieve this by padding the local header&#39;s extra field with an extra-field record of ID
+<code>0xD935</code> (the ID Android&#39;s zipalign uses); readers MUST NOT depend on alignment.</p>
+<h3 id="33-locating-members-informative">3.3 Locating members (informative)</h3>
+<ol>
+<li>Find the End of Central Directory record in the last 65,557 bytes; if a Zip64 EOCD locator
+precedes it, follow it to the Zip64 EOCD.</li>
+<li>Read the central directory: name → local header offset, sizes.</li>
+<li>Member data begins at <code>localHeaderOffset + 30 + nameLength + extraLength</code>, where both lengths
+come from the <strong>local</strong> header (its extra field may differ from the central one), so read the
+30-byte local header first.</li>
+</ol>
+<h3 id="34-required-members-and-order">3.4 Required members and order</h3>
+<ul>
+<li>The first member MUST be named <code>mimetype</code>, be stored, have no extra field, and contain exactly
+the ASCII bytes <code>application/vnd.gentropic.wireframe</code> with no newline. A file is identifiable by
+reading 73 bytes: the string starts at offset 38.</li>
+<li>The manifest <code>wireframe.json</code> MUST exist. It and the optional <code>signature.json</code> SHOULD be the last
+members, in that order, followed only by the central directory.</li>
+<li>Readers MUST ignore members they do not recognise.</li>
+</ul>
+<h3 id="35-appending-dead-space-writers">3.5 Appending, dead space, writers</h3>
+<p>A file can gain or replace members without being rewritten:</p>
+<ol>
+<li>Write new members <strong>after</strong> the existing central directory and EOCD, leaving them intact.</li>
+<li>Write a new <code>wireframe.json</code> (and <code>signature.json</code>, if signing).</li>
+<li>Write a new central directory and EOCD listing every live member.</li>
+</ol>
+<p>The old central directory, manifest and any superseded member become dead space. <strong>The central
+directory at the end of the file is authoritative</strong>: a member it does not list does not exist.
+Readers MAY recover from an interrupted append by searching backward for the previous complete
+EOCD. A <strong>compact</strong> operation rewrites the file without dead space.</p>
+<p>Appending assumes a single writer. The format provides no locking; concurrent writers corrupt the
+file. Readers are always safe, since the last complete central directory wins.</p>
+<h2 id="4-manifest-wireframejson">4. Manifest — <code>wireframe.json</code></h2>
+<pre><code class="language-jsonc">{
+  &quot;format&quot;: &quot;wireframe&quot;,
+  &quot;version&quot;: &quot;0.1&quot;,
+  &quot;spec&quot;: &quot;https://gentropic.org/wireframe/0.1&quot;,
+  &quot;frame&quot;: { &quot;origin&quot;: [512000, 7400000, 0], &quot;crs&quot;: &quot;EPSG:31983&quot;, &quot;units&quot;: &quot;m&quot; },
+  &quot;elements&quot;: [
+    {
+      &quot;name&quot;: &quot;topo 2024-09&quot;,
+      &quot;path&quot;: &quot;elements/topo%202024-09/&quot;,
+      &quot;kind&quot;: &quot;triangles&quot;,
+      &quot;coords&quot;: { &quot;mode&quot;: &quot;grid&quot;, &quot;origin&quot;: [512000, 7400000, 0], &quot;step&quot;: 0.0001 },
+      &quot;counts&quot;: { &quot;vertices&quot;: 4004001, &quot;vertexRows&quot;: 4086933, &quot;cells&quot;: 8000000, &quot;bricks&quot;: 123 },
+      &quot;bbox&quot;: [512000.0, 7400000.0, 610.2, 514000.0, 7402000.0, 847.9],
+      &quot;topology&quot;: { &quot;closed&quot;: false, &quot;oriented&quot;: true, &quot;manifold&quot;: true, &quot;volume&quot;: null, &quot;status&quot;: &quot;checked&quot; },
+      &quot;bricks&quot;: {
+        &quot;order&quot;: { &quot;by&quot;: [], &quot;then&quot;: &quot;morton&quot; },
+        &quot;target&quot;: 65536,
+        &quot;directory&quot;: [[33210, 65536, [512000.0, 7400000.0, 610.2, 512180.4, 7400177.9, 655.0]], &quot;…&quot;]
+      },
+      &quot;columns&quot;: [
+        { &quot;location&quot;: &quot;vertices&quot;, &quot;name&quot;: &quot;elevation_change&quot;, &quot;path&quot;: &quot;elements/topo%202024-09/columns/vertices/elevation_change.parquet&quot;, &quot;meta&quot;: { &quot;units&quot;: &quot;m&quot; } },
+        { &quot;location&quot;: &quot;cells&quot;, &quot;name&quot;: &quot;layer&quot;, &quot;member&quot;: &quot;cells.parquet&quot; }
+      ],
+      &quot;meta&quot;: { &quot;time&quot;: &quot;2024-09-30&quot;, &quot;lineage&quot;: { &quot;op&quot;: &quot;import&quot;, &quot;source&quot;: &quot;topo_2024_09.dxf&quot; } }
+    }
+  ],
+  &quot;members&quot;: {
+    &quot;elements/topo%202024-09/vertices.parquet&quot;: { &quot;size&quot;: 36812044, &quot;block&quot;: 16777216, &quot;sha256&quot;: [&quot;…&quot;, &quot;…&quot;, &quot;…&quot;] }
+  },
+  &quot;meta&quot;: {}
+}
+</code></pre>
+<table><thead><tr><th>Field</th><th>Rule</th></tr></thead><tbody>
+<tr><td><code>format</code></td><td>MUST be <code>&quot;wireframe&quot;</code>.</td></tr>
+<tr><td><code>version</code></td><td><code>&quot;&lt;major&gt;.&lt;minor&gt;&quot;</code>. Readers MUST reject an unknown major version and SHOULD read a newer minor, ignoring unknown fields.</td></tr>
+<tr><td><code>spec</code></td><td>Informative: the URL of this specification, <code>https://gentropic.org/wireframe/&lt;major&gt;.&lt;minor&gt;</code>, so a file found on its own says where it is described. Writers SHOULD include it. Readers MUST NOT fetch it or depend on it — <code>format</code> and <code>version</code> govern parsing, and a reader must work offline.</td></tr>
+<tr><td><code>frame</code></td><td>The file&#39;s coordinate frame, in @gcu/frame&#39;s shape: <code>origin</code> (a recommended local origin for rendering — it does not affect how stored coordinates are interpreted, §6.2), <code>crs</code> (a string such as <code>&quot;EPSG:31983&quot;</code>, or null for unstated), <code>units</code> (default <code>&quot;m&quot;</code>). Shared by every element.</td></tr>
+<tr><td><code>elements[]</code></td><td>Zero or more elements. <code>name</code> MUST be unique within the file; any non-empty string.</td></tr>
+<tr><td><code>path</code></td><td>The member prefix of the element&#39;s tables, ending in <code>/</code>. Writers derive it from the name by percent-encoding (RFC 3986 unreserved characters kept). <strong>Readers MUST use <code>path</code> as written, never derive it.</strong></td></tr>
+<tr><td><code>kind</code></td><td><code>&quot;points&quot;</code>, <code>&quot;lines&quot;</code> or <code>&quot;triangles&quot;</code> (§5).</td></tr>
+<tr><td><code>coords</code></td><td>§6.2.</td></tr>
+<tr><td><code>counts</code></td><td><code>vertices</code> = distinct <code>vid</code> values; <code>vertexRows</code> = rows of the vertex table; <code>cells</code> = rows of the cell table (0 for points); <code>bricks</code>. MUST match the tables.</td></tr>
+<tr><td><code>bbox</code></td><td>World <code>[minx, miny, minz, maxx, maxy, maxz]</code>, or null for an empty element.</td></tr>
+<tr><td><code>topology</code></td><td>Triangle elements only (§7.3); absent otherwise.</td></tr>
+<tr><td><code>bricks</code></td><td><code>order</code> records how bricks were built: <code>by</code> is a list of attribute column names sorted on first (possibly empty), <code>then</code> is <code>&quot;morton&quot;</code> or <code>&quot;none&quot;</code>. Informative — readers MUST NOT rely on it for correctness. <code>target</code> is the intended cells per brick. <code>directory[k]</code> = <code>[vertexRows, cells, worldBbox]</code> for brick <em>k</em> — a <strong>cache</strong> of the Parquet footers, letting a reader plan without reading them. Where cache and footer disagree, the footer wins. Writers MAY omit <code>directory</code>.</td></tr>
+<tr><td><code>columns[]</code></td><td>Attributes (§8).</td></tr>
+<tr><td><code>members</code></td><td>§10.</td></tr>
+<tr><td><code>meta</code></td><td>Free-form (§9), at file, element and column level.</td></tr>
+</tbody></table>
+<h2 id="5-element-kinds">5. Element kinds</h2>
+<p>Every element has a vertex table. Elements other than points also have a cell table whose rows
+each list a fixed number of vertex rows:</p>
+<table><thead><tr><th><code>kind</code></th><th>Cell table</th><th>Cell columns</th><th>A cell is</th></tr></thead><tbody>
+<tr><td><code>points</code></td><td>—</td><td>—</td><td>(none; the vertex is the record)</td></tr>
+<tr><td><code>lines</code></td><td><code>cells.parquet</code></td><td><code>a</code>, <code>b</code></td><td>a segment from <code>a</code> to <code>b</code></td></tr>
+<tr><td><code>triangles</code></td><td><code>cells.parquet</code></td><td><code>a</code>, <code>b</code>, <code>c</code></td><td>a face</td></tr>
+</tbody></table>
+<p>Polylines are lines elements: a polyline is a chain of segments, and networks with branches
+(junctions where three or more segments meet) need no special case. Which polyline a segment
+belongs to, and any per-polyline property, is an ordinary attribute on cells. Arcs are densified
+into chords by writers.</p>
+<p><code>&quot;tets&quot;</code> (<code>a</code>, <code>b</code>, <code>c</code>, <code>d</code>) is reserved for a future version. Faces with more than three
+vertices are triangulated by writers.</p>
+<h2 id="6-vertex-table-verticesparquet">6. Vertex table — <code>&lt;path&gt;vertices.parquet</code></h2>
+<h3 id="61-columns">6.1 Columns</h3>
+<p>First, in this order:</p>
+<table><thead><tr><th>Column</th><th>Physical type</th><th>Repetition</th><th>Encoding</th></tr></thead><tbody>
+<tr><td><code>x</code>, <code>y</code>, <code>z</code></td><td>INT32 (grid mode) / DOUBLE (float64 mode)</td><td>REQUIRED</td><td>grid: DELTA_BINARY_PACKED · float64: BYTE_STREAM_SPLIT</td></tr>
+<tr><td><code>vid</code></td><td>INT32, or INT64 when <code>counts.vertices</code> &gt; 2³¹ − 1</td><td>REQUIRED</td><td>DELTA_BINARY_PACKED</td></tr>
+</tbody></table>
+<ul>
+<li><code>vid</code> is the welded vertex identity, dense in <code>0 … counts.vertices − 1</code>. Rows with equal <code>vid</code>
+MUST have identical <code>x</code>, <code>y</code>, <code>z</code>. A <code>vid</code> repeats only across bricks, never within one.</li>
+<li>In lines and triangles elements, every vertex row MUST be referenced by at least one cell of its
+brick.</li>
+<li><strong>Points</strong> elements have no duplicated rows; for them <code>vid</code> MAY be omitted, in which case a
+point&#39;s identity is its row index and <code>counts.vertices</code> = <code>counts.vertexRows</code>.</li>
+<li>Attribute columns stored inline (§8) follow the core columns.</li>
+</ul>
+<h3 id="62-coordinate-modes">6.2 Coordinate modes</h3>
+<p><code>coords.mode</code> is one of:</p>
+<ul>
+<li><strong><code>&quot;grid&quot;</code></strong> (default). Stored integers <code>i</code> map to world coordinates by
+<code>world = coords.origin + coords.step × i</code> per axis, evaluated in IEEE-754 double precision.
+<code>coords.step</code> is a positive number or <code>[sx, sy, sz]</code>; <code>coords.origin</code> is a world point. Writers
+quantize by rounding to the nearest integer (error ≤ step/2), and MUST choose <code>step</code> and <code>origin</code>
+so every coordinate fits INT32 — or else use float64 mode.
+<ul>
+<li>The Parquet min/max statistics of <code>x</code>, <code>y</code>, <code>z</code> per row group are then exact lattice bounds,
+convertible to world bounds by the same formula.</li>
+<li>Elements with equal <code>step</code> and <code>origin</code> share a lattice: shared vertices compare exactly as
+integers, so seams between neighbouring elements are bit-exact.</li>
+</ul>
+</li>
+<li><strong><code>&quot;float64&quot;</code></strong>. <code>x</code>, <code>y</code>, <code>z</code> are DOUBLE world coordinates, stored losslessly. <code>coords.origin</code>
+and <code>coords.step</code> MUST be absent.</li>
+</ul>
+<h3 id="63-self-description">6.3 Self-description</h3>
+<p>Each table MUST carry a Parquet key–value metadata entry <code>wireframe</code> whose value is JSON, so a
+table read outside the archive still says what it is:</p>
+<pre><code class="language-json">{ &quot;version&quot;: &quot;0.1&quot;, &quot;spec&quot;: &quot;https://gentropic.org/wireframe/0.1&quot;, &quot;element&quot;: &quot;topo 2024-09&quot;, &quot;kind&quot;: &quot;triangles&quot;, &quot;table&quot;: &quot;vertices&quot;,
+  &quot;coords&quot;: { &quot;mode&quot;: &quot;grid&quot;, &quot;origin&quot;: [512000, 7400000, 0], &quot;step&quot;: 0.0001 } }
+</code></pre>
+<p><code>cells.parquet</code> carries the same entry with <code>&quot;table&quot;: &quot;cells&quot;</code> and no <code>coords</code>; separate attribute
+members carry <code>&quot;table&quot;: &quot;column&quot;</code> and their <code>location</code>. The manifest is authoritative where they
+differ.</p>
+<h2 id="7-cell-table-cellsparquet">7. Cell table — <code>&lt;path&gt;cells.parquet</code></h2>
+<h3 id="71-columns">7.1 Columns</h3>
+<table><thead><tr><th>Column</th><th>Physical type</th><th>Repetition</th><th>Encoding</th></tr></thead><tbody>
+<tr><td><code>a</code>, <code>b</code> (<code>c</code> for triangles)</td><td>INT32, or INT64 when <code>counts.vertexRows</code> &gt; 2³¹ − 1</td><td>REQUIRED</td><td>DELTA_BINARY_PACKED</td></tr>
+</tbody></table>
+<ul>
+<li>Values are <strong>global row indices</strong> into the vertex table — counted from the start of the table,
+not of the brick. They are not <code>vid</code>s.</li>
+<li>A cell MUST NOT repeat a vertex row (<code>a</code>, <code>b</code>, <code>c</code> distinct). Readers SHOULD tolerate cells that
+are geometrically degenerate (distinct rows, coincident positions).</li>
+</ul>
+<h3 id="72-the-brick-invariant">7.2 The brick invariant</h3>
+<p>Both tables MUST have exactly <code>counts.bricks</code> row groups, and for every brick <em>k</em>:</p>
+<ul>
+<li>row group <em>k</em> of the cell table holds the cells of brick <em>k</em>;</li>
+<li>every index in those cells lies in row group <em>k</em> of the vertex table, i.e. in
+<code>[vStart_k, vStart_k + vRows_k)</code> where <code>vStart_k</code> is the sum of the preceding row groups&#39; row
+counts.</li>
+</ul>
+<p>Brick <em>k</em> thus decodes without touching any other brick, and its cells&#39; indices become local by
+subtracting <code>vStart_k</code>. For points elements, bricks are the vertex table&#39;s row groups alone.</p>
+<p><strong>The invariant is the only bricking requirement.</strong> How bricks are formed — the sort, their size,
+their compactness — is a matter of quality, not validity; writers MAY use any method, including
+bucketed external sorts for elements too large to sort in memory.</p>
+<p>Writers MUST write per-column-chunk min/max statistics for <code>x</code>, <code>y</code>, <code>z</code>, SHOULD write them for
+<code>vid</code> and the cell columns, and MAY write column and offset indexes.</p>
+<h3 id="73-topology-triangle-elements">7.3 Topology (triangle elements)</h3>
+<p><code>topology</code> = <code>{ closed, oriented, manifold, volume, status }</code>. Edges are compared by the <code>vid</code>s of
+their endpoints, so the definitions hold across bricks:</p>
+<ul>
+<li><strong><code>closed</code></strong> — every edge is shared by exactly two faces.</li>
+<li><strong><code>oriented</code></strong> — every edge shared by two faces is traversed in opposite directions by them.</li>
+<li><strong><code>manifold</code></strong> — the faces around every vertex form a single fan (edge-connected, at most one
+boundary gap).</li>
+<li><strong><code>volume</code></strong> — enclosed volume in units³ (meaningful when closed and oriented), or null.</li>
+</ul>
+<p>Each of <code>closed</code>, <code>oriented</code>, <code>manifold</code> is a boolean or null (unknown). <code>status</code> is <code>&quot;checked&quot;</code>
+when the writer verified the claims against the faces, <code>&quot;declared&quot;</code> when they were taken from the
+source unverified.</p>
+<h3 id="74-building-bricks-informative">7.4 Building bricks (informative)</h3>
+<p>The reference writers:</p>
+<ol>
+<li>sort cells by <code>bricks.order.by</code> columns, if any, then by the Morton key of their centroids
+quantized to 16 bits per axis over the element bbox;</li>
+<li>cut the sorted cells into runs of <code>target</code> (default 65536), the last possibly shorter, and
+starting a new brick wherever a <code>by</code> value changes;</li>
+<li>within each brick, assign vertex rows in order of first use by that brick&#39;s cells; a vertex used
+by several bricks gets a row in each.</li>
+</ol>
+<p>Sorting by a column first makes each brick hold a single value of it, so that column&#39;s row-group
+min/max gives exact pushdown (&quot;only lode 7&quot;), at some cost in spatial compactness.</p>
+<p>Measured on 8M-face meshes: 2–2.2% of vertex rows are duplicates at 64k faces per brick (vs. ~485%
+for bricks cut in unsorted order); encoded size is about a third of raw.</p>
+<h2 id="8-attributes">8. Attributes</h2>
+<p>An attribute is a Parquet column of values per row of one table.</p>
+<ul>
+<li><code>location</code> is <code>&quot;vertices&quot;</code> or <code>&quot;cells&quot;</code>. Values are per <strong>row</strong>: for vertex attributes, rows
+sharing a <code>vid</code> MUST have equal values.</li>
+<li><strong>Inline</strong> (<code>member</code>: <code>&quot;vertices.parquet&quot;</code> or <code>&quot;cells.parquet&quot;</code>): extra columns in a core table,
+written at creation.</li>
+<li><strong>Separate</strong> (<code>path</code>): a member holding one Parquet column, named as the attribute, whose row
+groups have the same sizes as its location&#39;s table — so brick <em>k</em> is row group <em>k</em> here too. This
+is how attributes are added later (§3.5). Reference writers use
+<code>&lt;element path&gt;columns/&lt;location&gt;/&lt;percent-encoded name&gt;.parquet</code>; readers MUST take the path
+from the manifest.</li>
+<li>Exactly one of <code>member</code> / <code>path</code> MUST be present. Names MUST be unique per element and location;
+the core column names are reserved.</li>
+<li>Attributes MAY use any Parquet type, logical type, encoding, compression or nullability. Labels
+are best stored as strings (Parquet dictionary-encodes repeated values; Arrow-based readers
+surface them as categoricals). Readers that support only some encodings MUST fail with an error
+naming the column — never return wrong values. REQUIRED columns decode faster than nullable ones.</li>
+<li><strong>Vectors are separate scalar columns</strong> named <code>&lt;name&gt;.&lt;component&gt;</code> (e.g. <code>normal.x</code>), not Parquet
+lists.</li>
+</ul>
+<p><strong>Reserved names</strong> — when present they MUST have these meanings:</p>
+<table><thead><tr><th>Name</th><th>Location</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>color.r</code>, <code>color.g</code>, <code>color.b</code>, <code>color.a</code></td><td>either</td><td>colour, UINT8 (<code>a</code> optional)</td></tr>
+<tr><td><code>normal.x</code>, <code>normal.y</code>, <code>normal.z</code></td><td>vertices</td><td>unit normal</td></tr>
+<tr><td><code>src_id</code></td><td>either</td><td>the source&#39;s own identifier for the vertex or cell, for faithful round trips</td></tr>
+<tr><td><code>uv.u</code>, <code>uv.v</code></td><td>vertices</td><td>reserved for texture coordinates</td></tr>
+</tbody></table>
+<h2 id="9-meta">9. <code>meta</code></h2>
+<p><code>meta</code> objects at file, element and column level are free-form JSON. The format attaches no
+meaning to them, and readers MUST NOT require any key. Conventional keys, so tools agree on
+spelling (informative):</p>
+<table><thead><tr><th>Key</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>time</code></td><td>an ISO 8601 date or datetime the data represents (a survey date)</td></tr>
+<tr><td><code>lineage</code></td><td>a provenance object (operation, parameters, sources, tool build, timestamp)</td></tr>
+<tr><td><code>units</code></td><td>a column&#39;s units</td></tr>
+<tr><td><code>description</code></td><td>human-readable text</td></tr>
+<tr><td><code>nodata</code></td><td>a sentinel value meaning missing (e.g. −1e30)</td></tr>
+<tr><td><code>colors</code></td><td>for a label column: an object from value to colour</td></tr>
+</tbody></table>
+<h2 id="10-integrity-and-signing">10. Integrity and signing</h2>
+<p><code>members</code> maps every member except <code>mimetype</code>, <code>wireframe.json</code> and <code>signature.json</code> to
+<code>{ size, block, sha256 }</code>: the byte length, the block size (SHOULD be 16 MiB = 16777216), and the
+lowercase hex SHA-256 of each consecutive <code>block</code>-byte span of the member&#39;s data (the last span
+may be shorter; an empty member has an empty list). Hashing by block lets a ranged reader verify
+exactly the bytes it read, and keeps each hash within one call of a non-streaming digest API such
+as WebCrypto&#39;s.</p>
+<p>Writers MUST fill <code>members</code> for every member they write; readers MAY verify on demand. A member in
+the central directory but missing from <code>members</code> is not an error, but a verifying reader SHOULD
+report it.</p>
+<p><strong><code>signature.json</code></strong> (optional) signs the file by signing the manifest, which in turn pins every
+member:</p>
+<pre><code class="language-json">{ &quot;v&quot;: 1, &quot;alg&quot;: &quot;Ed25519&quot;, &quot;manifest&quot;: &quot;&lt;sha256 hex of wireframe.json&#39;s bytes&gt;&quot;, &quot;pub&quot;: &quot;&lt;base64&gt;&quot;, &quot;sig&quot;: &quot;&lt;base64 signature over the manifest hash bytes&gt;&quot; }
+</code></pre>
+<h2 id="11-core-column-constraints">11. Core-column constraints</h2>
+<p>So that small, fast readers are possible, the core columns (<code>x y z vid a b c</code>) MUST:</p>
+<ul>
+<li>be REQUIRED (maximum definition and repetition levels 0);</li>
+<li>use only the encodings of §6.1 and §7.1, with no dictionary pages;</li>
+<li>use compression UNCOMPRESSED or SNAPPY (UNCOMPRESSED RECOMMENDED — delta coding has already
+removed what snappy would find);</li>
+<li>use data page V1 or V2 (readers MUST accept both).</li>
+</ul>
+<p>Readers MUST NOT rely on any particular page size or count within a column chunk.</p>
+<h2 id="12-reserved">12. Reserved</h2>
+<ul>
+<li><code>lod/</code> — level-of-detail and other derived caches. Unspecified in 0.1; readers MUST ignore it.</li>
+<li><code>textures/</code> — texture images (with the <code>uv</code> attributes, §8). Unspecified in 0.1.</li>
+<li>Element kind <code>&quot;tets&quot;</code>.</li>
+<li>Manifest fields not defined here belong to future minor versions. Writers MUST NOT invent
+structural fields; anything else goes in <code>meta</code>.</li>
+</ul>
+<h2 id="13-reading-by-region-informative">13. Reading by region (informative)</h2>
+<ol>
+<li>Open the ZIP (§3.3), check <code>mimetype</code>, parse <code>wireframe.json</code>.</li>
+<li>For each element of interest, choose bricks from <code>bricks.directory</code>, or from the vertex table
+footer&#39;s row-group statistics of <code>x</code>, <code>y</code>, <code>z</code> (converted to world by §6.2).</li>
+<li>For each chosen brick, range-read row group <em>k</em> of both tables (verifying the covering blocks if
+desired), decode, and subtract <code>vStart_k</code> from the cell indices.</li>
+<li>Weld across bricks by <code>vid</code> if needed. Rendering usually doesn&#39;t need it: duplicated rows are
+bit-identical.</li>
+</ol>
+<h2 id="14-candidates-for-02">14. Candidates for 0.2</h2>
+<ul>
+<li>A GPU-ready cache under <code>lod/</code>: frame-of-reference bit-packed blocks that a vertex shader can
+unpack. In experiments, FOR was slightly smaller than Parquet delta for first-use vertex order
+and needs no prefix sum.</li>
+<li>Textures (<code>textures/</code> + <code>uv</code> + a per-face texture attribute).</li>
+<li>Exact arcs as a segment attribute.</li>
+<li><code>tets</code>.</li>
+<li>Variable-size bricks for very uneven density.</li>
+</ul>
+</article></main>
+<footer>MIT · <a href="https://gentropic.org">Geoscientific Chaos Union</a> · nothing on these pages talks to a server — your files stay in your browser</footer>
+<script type="module" src="../assets/chrome.js"></script>
+</body>
+</html>

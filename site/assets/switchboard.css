@@ -1,0 +1,123 @@
+/* @gcu/switchboard — the canonical design tokens.
+ *
+ * The single source of truth for the Switchboard palette: Layer 1 (--sw-*
+ * swatches) + Layer 2 (--au-* semantic mapping). Light is :root (equipment
+ * gray, the Switchboard default); dark is [data-theme="dark"] on <html>.
+ * Component CSS reads only --au-* (never --sw-* or hard-coded color) — see
+ * SPEC §6.0, the component-authoring contract.
+ *
+ * Drop this into any GCU tool to inherit the look; add `theme.js` for the
+ * persist/toggle/first-paint helper. Apps may override individual tokens after
+ * including this (e.g. Auditable Works brightens the dark accents) — the
+ * cascade makes that a small delta, not a fork. The dark accents below are the
+ * canonical values (SPEC §3); `test/switchboard-tokens.test.mjs` enforces that
+ * every in-repo copy matches this file modulo each app's documented delta.
+ */
+
+:root {
+  /* ── Layer 1 — Switchboard swatches (light / equipment gray) ── */
+  --sw-bg-deep:     #C2C1BE;
+  --sw-bg:          #D2D1CE;
+  --sw-bg-raised:   #E4E3E1;
+  --sw-bg-bright:   #EDECEB;
+  --sw-text:        #232322;
+  --sw-text-mid:    #504F4C;
+  --sw-text-soft:   #5A5856;
+  --sw-border:      #B3B1AD;
+  --sw-border-soft: #C6C4C1;
+  --sw-rule:        #A5A3A0;
+  /* Six accents — CVD-tuned (SPEC §3/§8). Names are honest hues: the v1.3.0
+     reset shifted teal→blue, amber→yellow, indigo→violet so red-green CVD
+     can't fold them together. Light accents sit dark (AA on the light
+     surface forces it); on a light surface they're glyph-backed for CVD. */
+  --sw-orange:      #8B3F00;  --sw-orange-soft: #FDE0CF;
+  --sw-blue:        #005C97;  --sw-blue-soft:   #CCE9FE;
+  --sw-green:       #00602B;  --sw-green-soft:  #D2ECD7;
+  --sw-yellow:      #6F5700;  --sw-yellow-soft: #F1E4CB;
+  --sw-red:         #99191E;  --sw-red-soft:    #FFDDD8;
+  --sw-violet:      #793A8D;  --sw-violet-soft: #F2DFF7;
+  --sw-mono:        'Space Mono', 'JetBrains Mono', 'Consolas', monospace;
+  --sw-sans:        'Barlow', system-ui, sans-serif;
+  --sw-radius:      3px;
+  --sw-radius-lg:   4px;
+
+  /* ── Layer 2 — semantic tokens (the component-facing API) ── */
+  --au-surface-deep:   var(--sw-bg-deep);
+  --au-surface:        var(--sw-bg);
+  --au-surface-raised: var(--sw-bg-raised);
+  --au-surface-bright: var(--sw-bg-bright);
+
+  --au-fg:             var(--sw-text);
+  --au-fg-muted:       var(--sw-text-mid);
+  --au-fg-soft:        var(--sw-text-soft);
+
+  --au-border:         var(--sw-border);
+  --au-border-soft:    var(--sw-border-soft);
+  --au-rule:           var(--sw-rule);
+
+  --au-action:         var(--sw-orange);
+  --au-action-soft:    var(--sw-orange-soft);
+  --au-info:           var(--sw-blue);
+  --au-info-soft:      var(--sw-blue-soft);
+  --au-success:        var(--sw-green);
+  --au-success-soft:   var(--sw-green-soft);
+  --au-warn:           var(--sw-yellow);
+  --au-warn-soft:      var(--sw-yellow-soft);
+  --au-error:          var(--sw-red);
+  --au-error-soft:     var(--sw-red-soft);
+  --au-selected:       var(--sw-violet);
+  --au-selected-soft:  var(--sw-violet-soft);
+
+  --au-font-mono:      var(--sw-mono);
+  --au-font-sans:      var(--sw-sans);
+  --au-radius:         var(--sw-radius);
+  --au-radius-lg:      var(--sw-radius-lg);
+
+  /* ── Layering — z-index scale (theme-independent; SPEC §4). One ladder so
+        overlays don't fight: dropdown < overlay < modal < shield. ── */
+  --sw-z-raised:    10;
+  --sw-z-dropdown:  100;
+  --sw-z-overlay:   1000;
+  --sw-z-modal:     2000;
+  --sw-z-shield:    2147483647;   /* cross-origin iframe pointer-shield — above all */
+  --au-z-raised:    var(--sw-z-raised);
+  --au-z-dropdown:  var(--sw-z-dropdown);
+  --au-z-overlay:   var(--sw-z-overlay);
+  --au-z-modal:     var(--sw-z-modal);
+  --au-z-shield:    var(--sw-z-shield);
+
+  /* ── Motion — restrained by default; components honor prefers-reduced-motion
+        (SPEC §8). Equipment, not theme-park: short, ease-out, no bounce. ── */
+  --sw-dur-fast:    0.12s;
+  --sw-dur:         0.2s;
+  --sw-ease:        cubic-bezier(0.2, 0, 0, 1);
+  --au-dur-fast:    var(--sw-dur-fast);
+  --au-dur:         var(--sw-dur);
+  --au-ease:        var(--sw-ease);
+
+  /* ── Touch — minimum interactive target on pointer:coarse (SPEC §4). ── */
+  --sw-tap:         44px;
+  --au-tap:         var(--sw-tap);
+}
+
+[data-theme="dark"] {
+  /* Dark theme (basalt) — overrides --sw-* swatches only; the --au-* mappings
+     above auto-resolve through the reassigned swatches. Accents are the
+     canonical Switchboard dark values (SPEC §3). */
+  --sw-bg-deep:     #0E1012;
+  --sw-bg:          #15171A;
+  --sw-bg-raised:   #1D2024;
+  --sw-bg-bright:   #25282D;
+  --sw-text:        #DDDCDA;
+  --sw-text-mid:    #9E9C98;
+  --sw-text-soft:   #83817E;
+  --sw-border:      #2F3338;
+  --sw-border-soft: #24272B;
+  --sw-rule:        #3A3E44;
+  --sw-orange:      #FB9044;  --sw-orange-soft: #2E2119;
+  --sw-blue:        #008CD1;  --sw-blue-soft:   #16262F;
+  --sw-green:       #5CCB80;  --sw-green-soft:  #1A261D;
+  --sw-yellow:      #FFD73A;  --sw-yellow-soft: #292317;
+  --sw-red:         #E75A51;  --sw-red-soft:    #30201D;
+  --sw-violet:      #EC9FFF;  --sw-violet-soft: #2A212C;
+}

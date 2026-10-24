@@ -1,0 +1,35 @@
+<main>
+<section class="hero">
+<span class="badge">draft 0.1 — the format may still change before 1.0</span>
+<h1>wireframe <span>.wfr</span></h1>
+<p class="lede">A single-file container for large meshes, line networks and point sets — topography, pit shells, geological solids, design strings — made to be read by byte range, never held whole.</p>
+</section>
+
+<ul class="points">
+<li><b>one file, many elements</b>Triangle meshes, polylines and points side by side, in a ZIP whose members are all stored, so any part is a byte range.</li>
+<li><b>bricks</b>Cells are sorted along a space-filling curve and cut into bricks. Brick <i>k</i> is row group <i>k</i> of both tables and holds everything it needs.</li>
+<li><b>pushdown for free</b>Vertices sit on an integer grid, so ordinary Parquet min/max statistics are each brick's bounding box: a region query reads the footer and skips the rest.</li>
+<li><b>faster than raw</b>Coordinates and indices are delta bit-packed to about a third of their raw size, and decode at gigabytes per second per thread.</li>
+<li><b>plain formats inside</b>Unzip a .wfr and every table opens in pyarrow, DuckDB or Polars. Each table also says what it is.</li>
+<li><b>written in bounded memory</b>The writer streams: a 4 GB DXF converts in about half a minute, and the memory budget never changes the bytes written.</li>
+</ul>
+
+<h2>tools</h2>
+<div class="cards">
+<a class="card" href="0.1/"><div class="t">specification 0.1</div><div class="d">The format of record: container, manifest, tables, bricks, attributes, integrity.</div></a>
+<a class="card" href="convert/"><div class="t">convert</div><div class="d">PLY, OBJ or DXF to .wfr, in your browser. Nothing is uploaded.</div></a>
+<a class="card" href="inspect/"><div class="t">inspect</div><div class="d">Open a .wfr and check it against the spec: structure, hashes, bricks, encodings.</div></a>
+<a class="card" href="https://gentropic.org/micro/"><div class="t">micro</div><div class="d">A point-cloud and block-model workbench that opens, converts and stores .wfr natively.</div></a>
+</div>
+
+<h2>inside a file</h2>
+<pre class="tree">file.wfr  (ZIP, every member stored)
+├── mimetype                              application/vnd.gentropic.wireframe
+├── elements/&lt;element&gt;/vertices.parquet   x, y, z, vid   — one row group per brick
+├── elements/&lt;element&gt;/cells.parquet      a, b[, c]      — one row group per brick
+├── elements/&lt;element&gt;/columns/…         attributes added later
+└── wireframe.json                        the manifest — frame, elements, bricks, hashes</pre>
+
+<h2>libraries</h2>
+<p>JavaScript: <code>@gcu/wireframe</code> — a narrow Parquet reader that decodes at ~4 GB/s per thread, a streaming writer, and PLY/OBJ/DXF converters (source at <a href="https://github.com/gentropic/wireframe">gentropic/wireframe</a>). A Python package (<code>gcu.wireframe</code>, numpy + pyarrow) is next.</p>
+</main>

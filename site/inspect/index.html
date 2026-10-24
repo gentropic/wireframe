@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>inspect a .wfr</title>
+<meta name="description" content="Open a .wfr and check it against the specification, in your browser.">
+<link rel="icon" type="image/svg+xml" href="../assets/icon.svg">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="../assets/switchboard.css">
+<link rel="stylesheet" href="../assets/site.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header class="top"><a class="brand" href="../">wireframe <span>.wfr</span></a>
+<nav><a href="../0.1/">spec</a><a href="../convert/">convert</a><a href="../inspect/">inspect</a><a href="https://github.com/gentropic/wireframe">source</a><button class="theme" id="themeToggle" title="light / dark">◐</button></nav></header>
+<main>
+<h1 class="mono">inspect a .wfr</h1>
+<p class="note">Open a .wfr to see what it holds and check it against the <a href="../0.1/">specification</a>. Only the zip directory, the manifest and the Parquet footers are read until you ask for a deep check or hash verification. The file never leaves your browser.</p>
+<label class="drop" id="drop">drop a .wfr here, or click to choose<input type="file" id="pick" accept=".wfr"></label>
+<div id="out"></div>
+</main>
+
+<footer>MIT · <a href="https://gentropic.org">Geoscientific Chaos Union</a> · nothing on these pages talks to a server — your files stay in your browser</footer>
+<script type="module" src="../assets/chrome.js"></script>
+</body>
+</html>
