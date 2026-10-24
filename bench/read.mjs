@@ -30,13 +30,16 @@ const valuesOf = (el) => el.meta.counts.vertexRows * 4 + el.meta.counts.cells * 
 const CORE = new Set(['x', 'y', 'z', 'vid', 'a', 'b', 'c']);
 
 // narrow: decode every core column chunk of both tables into per-column preallocated arrays
+// (allocated once per element, outside the timed region — this measures decoding, not calloc)
+const outs = new Map();
 async function narrowAll(el) {
-  const out = {};
+  if (!outs.has(el)) outs.set(el, {});
+  const out = outs.get(el);
   for (const table of ['vertices', 'cells']) {
     const t = el.tables[table], cols = t.footer.rowGroups[0].columns.map((c) => c.name).filter((n) => CORE.has(n));
     const bytes = await t.src.read(0, t.src.size); // in-memory: a subarray
     const n = t.footer.numRows;
-    for (const name of cols) out[name] = new Int32Array(n);
+    for (const name of cols) if (!out[name]) out[name] = new Int32Array(n);
     let o = 0;
     for (const rg of t.footer.rowGroups) {
       for (const c of rg.columns) if (CORE.has(c.name)) decodeChunk(bytes.subarray(c.start, c.start + c.length), c, out[c.name], o);

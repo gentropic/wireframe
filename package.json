@@ -6,10 +6,12 @@
     "gen": "node js/tools/gen-unpack.mjs",
     "bench:build": "node bench/build.mjs",
     "bench:read": "node bench/read.mjs",
+    "wfr": "node js/cli.mjs",
     "test": "node --test \"js/test/*.test.mjs\"",
     "conformance": "uv run --no-project --with pyarrow --with numpy python conformance/pyarrow_check.py && node conformance/read_pyarrow.mjs"
   },
   "devDependencies": {
+    "@gcu/dxf": "file:../auditable/ext/dxf",
     "hyparquet": "1.26.2"
   }
 }

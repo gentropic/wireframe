@@ -58,9 +58,75 @@ export function parseFooter(tail, fileSize) {
   return { numRows: fm[3], schema, rowGroups, kv, createdBy: str(fm[6]), footerLength: len + 8, fileSize };
 }
 
+// RLE/bit-packed hybrid (dictionary indices): n values at bit width bw from B[p…end).
+function hybridDecode(B, p, end, bw, n) {
+  const out = new Int32Array(n);
+  let o = 0;
+  const r = { b: B, p };
+  while (o < n && r.p < end) {
+    let h = 0, mul = 1, byte;
+    do { byte = B[r.p++]; h += (byte & 0x7f) * mul; mul *= 128; } while (byte & 0x80);
+    if (h % 2 === 0) {
+      const run = h / 2, nb = Math.ceil(bw / 8);
+      let v = 0; for (let i = 0; i < nb; i++) v += B[r.p++] * 2 ** (8 * i);
+      for (let i = 0; i < run && o < n; i++) out[o++] = v;
+    } else {
+      const groups = (h - 1) / 2, total = groups * 8;
+      let acc = 0, bits = 0, q = r.p;
+      for (let i = 0; i < total; i++) {
+        while (bits < bw) { acc += B[q++] * 2 ** bits; bits += 8; }
+        const v = acc % 2 ** bw; acc = Math.floor(acc / 2 ** bw); bits -= bw;
+        if (o < n) out[o++] = v;
+      }
+      r.p += groups * bw;
+    }
+  }
+  return out;
+}
+
+// BYTE_ARRAY (UTF-8 strings): dictionary pages + RLE_DICTIONARY data pages, or PLAIN.
+function decodeStrings(bytes, col, out, o) {
+  if (col.codec !== 'UNCOMPRESSED' && col.codec !== 'SNAPPY') throw new Error(`parquet: column "${col.name}" uses codec ${col.codec}`);
+  out = out || new Array(col.numValues);
+  let p = 0, done = 0, dict = null;
+  while (done < col.numValues) {
+    const { value: h, end } = decodeStruct(bytes, p);
+    let data = bytes.subarray(end, end + h[3]);
+    p = end + h[3];
+    if (col.codec === 'SNAPPY' && h[1] !== PAGE_DATA_V2) data = snappyDecompress(data, h[2]); // V2: below, after the levels
+    let count, encoding;
+    if (h[1] === PAGE_DICT) {
+      const n = h[7][1]; dict = new Array(n);
+      for (let i = 0, q = 0; i < n; i++) { const len = data[q] | (data[q + 1] << 8) | (data[q + 2] << 16) | (data[q + 3] << 24); dict[i] = td.decode(data.subarray(q + 4, q + 4 + len)); q += 4 + len; }
+      continue;
+    }
+    if (h[1] === PAGE_DATA) { count = h[5][1]; encoding = h[5][2]; }
+    else if (h[1] === PAGE_DATA_V2) {
+      const v2 = h[8]; count = v2[1]; encoding = v2[4];
+      if (v2[2]) throw new Error(`parquet: column "${col.name}" has nulls`);
+      const lv = (v2[5] || 0) + (v2[6] || 0);
+      data = data.subarray(lv);
+      if (col.codec === 'SNAPPY' && v2[7] !== false) data = snappyDecompress(data, h[2] - lv);
+    } else continue;
+    if (encoding === ENC.RLE_DICTIONARY || encoding === ENC.PLAIN_DICTIONARY) {
+      if (!dict) throw new Error(`parquet: column "${col.name}" has dictionary indices but no dictionary page`);
+      const idx = hybridDecode(data, 1, data.length, data[0], count);
+      for (let i = 0; i < count; i++) out[o + done + i] = dict[idx[i]];
+    } else if (encoding === ENC.PLAIN) {
+      for (let i = 0, q = 0; i < count; i++) { const len = data[q] | (data[q + 1] << 8) | (data[q + 2] << 16) | (data[q + 3] << 24); out[o + done + i] = td.decode(data.subarray(q + 4, q + 4 + len)); q += 4 + len; }
+    } else throw new Error(`parquet: column "${col.name}" uses ${ENC_NAME[encoding] ?? encoding} for strings`);
+    done += count;
+  }
+  return out;
+}
+
 // Decode one column chunk. `bytes` holds exactly the chunk (col.start … col.start + col.length).
-// out: an optional preallocated typed array; values land at out[o…].
+// out: an optional preallocated typed array (or Array for strings); values land at out[o…].
 export function decodeChunk(bytes, col, out, o = 0) {
+  if (col.type === 'BYTE_ARRAY') {
+    if (col.repetition !== 'REQUIRED') throw new Error(`parquet: column "${col.name}" is ${col.repetition}, the narrow reader decodes REQUIRED columns only`);
+    return decodeStrings(bytes, col, out, o);
+  }
   const A = ARRAY[col.type];
   if (!A) throw new Error(`parquet: column "${col.name}" has type ${col.type}, outside the narrow reader`);
   if (col.repetition !== 'REQUIRED') throw new Error(`parquet: column "${col.name}" is ${col.repetition}, the narrow reader decodes REQUIRED columns only`);

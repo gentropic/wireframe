@@ -88,34 +88,85 @@ const te = new TextEncoder();
 const MAX32 = 0xffffffff;
 function le(view, p, v, bytes) { for (let i = 0; i < bytes; i++) { view[p + i] = v % 256; v = Math.floor(v / 256); } }
 
+// SHA-256 of consecutive `block`-byte spans, fed incrementally (WebCrypto digests whole buffers).
+export function blockHasher(block = 16 * 1024 * 1024) {
+  let buf = new Uint8Array(Math.min(block, 1 << 20)), n = 0;
+  const out = [];
+  const hex = (b) => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, '0')).join('');
+  const digest = async () => { out.push(hex(await crypto.subtle.digest('SHA-256', buf.subarray(0, n)))); n = 0; };
+  return {
+    async update(c) {
+      let p = 0;
+      while (p < c.length) {
+        if (n === buf.length && buf.length < block) { const b = new Uint8Array(Math.min(block, buf.length * 2)); b.set(buf); buf = b; }
+        const k = Math.min(c.length - p, buf.length - n);
+        buf.set(c.subarray(p, p + k), n); n += k; p += k;
+        if (n === block) await digest();
+      }
+    },
+    async finish() { if (n) await digest(); return out; },
+  };
+}
+
 export function createZipWriter(sink, { align = 64 } = {}) {
   let offset = 0;
   const cd = [];
   const put = async (b) => { await sink.write(b); offset += b.length; };
+  // Local header. Streamed members carry a Zip64 extra with zero sizes; the descriptor has them.
+  const localHeader = (nameB, { size = 0, crc = 0, streamed, aligned }) => {
+    const big = streamed || size >= MAX32;
+    const z64 = big ? 20 : 0;
+    let pad = 0;
+    const doAlign = aligned && align > 1;
+    if (doAlign) {
+      const base = offset + 30 + nameB.length + z64 + 6; // + 0xD935 record header (4) + alignment (2)
+      pad = (align - (base % align)) % align;
+    }
+    const elen = z64 + (doAlign ? 6 + pad : 0);
+    const h = new Uint8Array(30 + nameB.length + elen);
+    le(h, 0, 0x04034b50, 4); le(h, 4, big ? 45 : 20, 2); le(h, 6, streamed ? 0x0808 : 0x0800, 2); le(h, 8, 0, 2);
+    le(h, 10, 0, 2); le(h, 12, 0x21, 2); le(h, 14, streamed ? 0 : crc, 4);
+    le(h, 18, big ? MAX32 : size, 4); le(h, 22, big ? MAX32 : size, 4);
+    le(h, 26, nameB.length, 2); le(h, 28, elen, 2); h.set(nameB, 30);
+    let x = 30 + nameB.length;
+    if (big) { le(h, x, 1, 2); le(h, x + 2, 16, 2); le(h, x + 4, streamed ? 0 : size, 8); le(h, x + 12, streamed ? 0 : size, 8); x += 20; }
+    if (doAlign) { le(h, x, 0xd935, 2); le(h, x + 2, 2 + pad, 2); le(h, x + 4, align, 2); }
+    return h;
+  };
   return {
     get offset() { return offset; },
-    async add(name, data, { aligned = true } = {}) {
-      const nameB = te.encode(name), size = data.length, crc = crc32(data);
-      const big = size >= MAX32;
-      const z64 = big ? 20 : 0; // id, len, usize, csize
-      let pad = 0;
-      if (aligned && align > 1) {
-        const base = offset + 30 + nameB.length + z64 + 6; // + 0xD935 record header (4) + alignment (2)
-        pad = (align - (base % align)) % align;
-      }
-      const elen = z64 + (aligned && align > 1 ? 6 + pad : 0);
-      const h = new Uint8Array(30 + nameB.length + elen);
-      le(h, 0, 0x04034b50, 4); le(h, 4, big ? 45 : 20, 2); le(h, 6, 0x0800, 2); le(h, 8, 0, 2);
-      le(h, 10, 0, 2); le(h, 12, 0x21, 2); le(h, 14, crc, 4);
-      le(h, 18, big ? MAX32 : size, 4); le(h, 22, big ? MAX32 : size, 4);
-      le(h, 26, nameB.length, 2); le(h, 28, elen, 2); h.set(nameB, 30);
-      let x = 30 + nameB.length;
-      if (big) { le(h, x, 1, 2); le(h, x + 2, 16, 2); le(h, x + 4, size, 8); le(h, x + 12, size, 8); x += 20; }
-      if (aligned && align > 1) { le(h, x, 0xd935, 2); le(h, x + 2, 2 + pad, 2); le(h, x + 4, align, 2); }
-      const localOffset = offset;
-      await put(h);
-      await put(data);
-      cd.push({ nameB, size, crc, localOffset });
+    // a whole member at once
+    async add(name, data, opts = {}) {
+      return this.addChunks(name, data.length, crc32(data), [data], opts);
+    },
+    // a member whose size and CRC are known, written from an (async) iterable of chunks
+    async addChunks(name, size, crc, chunks, { aligned = true, hash = true } = {}) {
+      const nameB = te.encode(name), localOffset = offset;
+      await put(localHeader(nameB, { size, crc, streamed: false, aligned }));
+      const h = hash ? blockHasher() : null;
+      let n = 0;
+      for await (const c of chunks) { await put(c); if (h) await h.update(c); n += c.length; }
+      if (n !== size) throw new Error(`zip: member ${name} wrote ${n} bytes, declared ${size}`);
+      cd.push({ nameB, size, crc, localOffset, flags: 0x0800 });
+      return { size, crc, sha256: h ? await h.finish() : null };
+    },
+    // a member of unknown size: data descriptor (flag bit 3) + Zip64 sizes after the data
+    begin(name, { aligned = true, hash = true } = {}) {
+      const nameB = te.encode(name), localOffset = offset;
+      let crc = 0, size = 0, started = false;
+      const h = hash ? blockHasher() : null;
+      const start = async () => { if (!started) { started = true; await put(localHeader(nameB, { streamed: true, aligned })); } };
+      return {
+        async write(c) { await start(); crc = crc32(c, crc); size += c.length; await put(c); if (h) await h.update(c); },
+        async end() {
+          await start();
+          const d = new Uint8Array(24);
+          le(d, 0, 0x08074b50, 4); le(d, 4, crc, 4); le(d, 8, size, 8); le(d, 16, size, 8);
+          await put(d);
+          cd.push({ nameB, size, crc, localOffset, flags: 0x0808 });
+          return { size, crc, sha256: h ? await h.finish() : null };
+        },
+      };
     },
     async finish() {
       const cdStart = offset;
@@ -124,7 +175,7 @@ export function createZipWriter(sink, { align = 64 } = {}) {
         const z = (needSize ? 16 : 0) + (needOff ? 8 : 0);
         const elen = z ? 4 + z : 0;
         const h = new Uint8Array(46 + e.nameB.length + elen);
-        le(h, 0, 0x02014b50, 4); le(h, 4, 45, 2); le(h, 6, z ? 45 : 20, 2); le(h, 8, 0x0800, 2); le(h, 10, 0, 2);
+        le(h, 0, 0x02014b50, 4); le(h, 4, 45, 2); le(h, 6, z || e.flags & 8 ? 45 : 20, 2); le(h, 8, e.flags, 2); le(h, 10, 0, 2);
         le(h, 12, 0, 2); le(h, 14, 0x21, 2); le(h, 16, e.crc, 4);
         le(h, 20, needSize ? MAX32 : e.size, 4); le(h, 24, needSize ? MAX32 : e.size, 4);
         le(h, 28, e.nameB.length, 2); le(h, 30, elen, 2); le(h, 32, 0, 2); le(h, 34, 0, 2); le(h, 36, 0, 2); le(h, 38, 0, 4);

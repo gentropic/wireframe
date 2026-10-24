@@ -1,14 +1,22 @@
 {
   "name": "@gcu/wireframe",
   "version": "0.0.1",
-  "description": "Reader and writer for .wfr — brick-aligned Parquet meshes in a stored ZIP, read by byte range",
+  "description": "Reader and writer for .wfr — brick-aligned Parquet meshes in a stored ZIP, read by byte range, written in bounded memory",
   "type": "module",
   "main": "src/index.js",
-  "exports": { ".": "./src/index.js" },
-  "files": ["src/"],
+  "exports": {
+    ".": "./src/index.js",
+    "./convert/ply": "./convert/ply.js",
+    "./convert/obj": "./convert/obj.js",
+    "./convert/dxf": "./convert/dxf.js"
+  },
+  "bin": { "wfr": "cli.mjs" },
+  "files": ["src/", "convert/", "cli.mjs"],
+  "peerDependencies": { "@gcu/dxf": "*" },
+  "peerDependenciesMeta": { "@gcu/dxf": { "optional": true } },
   "license": "MIT",
   "author": "Arthur Endlein Correia",
   "repository": { "type": "git", "url": "git+https://github.com/gentropic/wireframe.git", "directory": "js" },
   "homepage": "https://github.com/gentropic/wireframe#readme",
-  "keywords": ["mesh", "wireframe", "parquet", "geology", "mining", "triangles"]
+  "keywords": ["mesh", "wireframe", "parquet", "geology", "mining", "triangles", "dxf", "ply", "obj"]
 }

@@ -133,11 +133,11 @@ test('manifest: block hashes match the members; topology "check" lands in the ma
   }
 });
 
-test('parquet writer: delta round-trips extreme int32 deltas and partial miniblocks', () => {
+test('parquet writer: delta round-trips extreme int32 deltas and partial miniblocks', async () => {
   const n = 1000 + 37, a = new Int32Array(n);
   for (let i = 0; i < n; i++) a[i] = i % 3 === 0 ? -2147483648 : i % 3 === 1 ? 2147483647 : (i * 7919) | 0;
   const d = new Float64Array(n).map((_, i) => Math.sin(i) * 1e6);
-  const bytes = writeParquet({ columns: [{ name: 'a', type: 'INT32', encoding: 'DELTA_BINARY_PACKED', data: a }, { name: 'd', type: 'DOUBLE', encoding: 'BYTE_STREAM_SPLIT', data: d }], rowGroups: [500, 537] });
+  const bytes = await writeParquet({ columns: [{ name: 'a', type: 'INT32', encoding: 'DELTA_BINARY_PACKED', data: a }, { name: 'd', type: 'DOUBLE', encoding: 'BYTE_STREAM_SPLIT', data: d }], rowGroups: [500, 537] });
   const f = parseFooter(bytes, bytes.length);
   const outA = new Int32Array(n), outD = new Float64Array(n);
   let o = 0;
