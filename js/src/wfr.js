@@ -3,6 +3,9 @@ import { openZip } from './zip.js';
 import { parseFooter, decodeChunk } from './parquet.js';
 
 export const MIMETYPE = 'application/vnd.gentropic.wireframe';
+export const FORMAT_VERSION = '0.1';
+// informative: where this format is described (SPEC §4) — written, never fetched
+export const SPEC_URL = `https://gentropic.org/wireframe/${FORMAT_VERSION}`;
 const td = new TextDecoder();
 
 // A ranged view of one stored member.

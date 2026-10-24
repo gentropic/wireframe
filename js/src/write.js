@@ -3,7 +3,7 @@
 import { createZipWriter } from './zip.js';
 import { createScratch } from './scratch.js';
 import { createElementWriter } from './pipeline.js';
-import { MIMETYPE } from './wfr.js';
+import { MIMETYPE, FORMAT_VERSION, SPEC_URL } from './wfr.js';
 
 const te = new TextEncoder();
 const BLOCK = 16 * 1024 * 1024;
@@ -53,7 +53,7 @@ export function createWfrWriter(sink, { budget = Infinity, backing = null, scrat
         elements.push(manifest);
       }
       const f = frame || { origin: elements.find((e) => e.coords.origin)?.coords.origin || [0, 0, 0] };
-      const manifest = { format: 'wireframe', version: '0.1', frame: { crs: null, units: 'm', ...f }, elements, members, meta };
+      const manifest = { format: 'wireframe', version: FORMAT_VERSION, spec: SPEC_URL, frame: { crs: null, units: 'm', ...f }, elements, members, meta };
       await zw.add('wireframe.json', te.encode(JSON.stringify(manifest)), { hash: false });
       const { size } = await zw.finish();
       return { size, manifest, stats: store.stats };

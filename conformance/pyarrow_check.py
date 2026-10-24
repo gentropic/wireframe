@@ -33,6 +33,7 @@ with zipfile.ZipFile(wfr) as z:
             t = f.read()
             assert md.num_row_groups == el["counts"]["bricks"], "row groups != bricks"
             assert kv["table"] == table and kv["element"] == el["name"]
+            assert kv["spec"] == manifest["spec"] == "https://gentropic.org/wireframe/0.1", "spec URL in manifest and table"
             sums = {c: int(np.asarray(t[c]).astype(np.int64).sum()) for c in t.column_names}
             print(f"pyarrow read {el['name']}/{table}: {t.num_rows} rows, {md.num_row_groups} row groups, sums {sums}")
 

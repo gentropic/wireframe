@@ -102,6 +102,7 @@ file. Readers are always safe, since the last complete central directory wins.
 {
   "format": "wireframe",
   "version": "0.1",
+  "spec": "https://gentropic.org/wireframe/0.1",
   "frame": { "origin": [512000, 7400000, 0], "crs": "EPSG:31983", "units": "m" },
   "elements": [
     {
@@ -135,6 +136,7 @@ file. Readers are always safe, since the last complete central directory wins.
 |---|---|
 | `format` | MUST be `"wireframe"`. |
 | `version` | `"<major>.<minor>"`. Readers MUST reject an unknown major version and SHOULD read a newer minor, ignoring unknown fields. |
+| `spec` | Informative: the URL of this specification, `https://gentropic.org/wireframe/<major>.<minor>`, so a file found on its own says where it is described. Writers SHOULD include it. Readers MUST NOT fetch it or depend on it — `format` and `version` govern parsing, and a reader must work offline. |
 | `frame` | The file's coordinate frame, in @gcu/frame's shape: `origin` (a recommended local origin for rendering — it does not affect how stored coordinates are interpreted, §6.2), `crs` (a string such as `"EPSG:31983"`, or null for unstated), `units` (default `"m"`). Shared by every element. |
 | `elements[]` | Zero or more elements. `name` MUST be unique within the file; any non-empty string. |
 | `path` | The member prefix of the element's tables, ending in `/`. Writers derive it from the name by percent-encoding (RFC 3986 unreserved characters kept). **Readers MUST use `path` as written, never derive it.** |
@@ -208,7 +210,7 @@ Each table MUST carry a Parquet key–value metadata entry `wireframe` whose val
 table read outside the archive still says what it is:
 
 ```json
-{ "version": "0.1", "element": "topo 2024-09", "kind": "triangles", "table": "vertices",
+{ "version": "0.1", "spec": "https://gentropic.org/wireframe/0.1", "element": "topo 2024-09", "kind": "triangles", "table": "vertices",
   "coords": { "mode": "grid", "origin": [512000, 7400000, 0], "step": 0.0001 } }
 ```
 

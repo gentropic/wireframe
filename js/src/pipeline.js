@@ -12,6 +12,7 @@
 import { BatchWriter, decodeChunk as decodeBatch, loadAll, chunkSize, encodeChunk } from './batch.js';
 import { ParquetStream } from './parquet-write.js';
 import { crc32 } from './zip.js';
+import { FORMAT_VERSION, SPEC_URL } from './wfr.js';
 
 const KIND_K = { points: 1, lines: 2, triangles: 3 };
 const CELL_COLS = { lines: ['a', 'b'], triangles: ['a', 'b', 'c'] };
@@ -480,7 +481,7 @@ export function createElementWriter(spec, ctx) {
     // outputs: the vertex table streams into the zip; the cell table goes to scratch, copied in after
     const path = `elements/${encodeURIComponent(spec.name)}/`;
     const coords = grid ? { mode: 'grid', origin, step } : { mode: 'float64' };
-    const kvFor = (table) => ({ wireframe: JSON.stringify({ version: '0.1', element: spec.name, kind: spec.kind, table, ...(table === 'vertices' ? { coords } : {}) }) });
+    const kvFor = (table) => ({ wireframe: JSON.stringify({ version: FORMAT_VERSION, spec: SPEC_URL, element: spec.name, kind: spec.kind, table, ...(table === 'vertices' ? { coords } : {}) }) });
     const ctype = grid ? { type: 'INT32', encoding: 'DELTA_BINARY_PACKED' } : { type: 'DOUBLE', encoding: 'BYTE_STREAM_SPLIT' };
     const keepVid = spec.kind !== 'points' || !!spec.keepVid;
     const pqCol = (n, t, prefix) => ({ name: n, ...PQ[t], ...(t === 'string' ? { labels: labels[prefix + n].list } : {}) });

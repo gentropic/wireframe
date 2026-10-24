@@ -122,6 +122,8 @@ test('topology: an open sheet, a closed cube, a flipped face', async () => {
 test('manifest: block hashes match the members; topology "check" lands in the manifest', async () => {
   const c = cube(5);
   const { bytes, wfr } = await roundtrip({ elements: [{ name: 'cube', kind: 'triangles', positions: c.V, cells: c.F, topology: 'check' }] });
+  assert.equal(wfr.manifest.spec, 'https://gentropic.org/wireframe/0.1', 'the manifest names its spec');
+  assert.equal(JSON.parse(wfr.elements[0].tables.vertices.footer.kv.wireframe).spec, wfr.manifest.spec, 'so does each table, for when it travels alone');
   assert.equal(wfr.manifest.elements[0].topology.status, 'checked');
   assert.ok(Math.abs(wfr.manifest.elements[0].topology.volume - 125) < 1e-6);
   for (const [name, m] of Object.entries(wfr.manifest.members)) {
