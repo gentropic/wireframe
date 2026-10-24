@@ -50,27 +50,38 @@ export function createScratch({ backing = null, budget = Infinity } = {}) {
   return store;
 }
 
-// Node backing: one file per spill under a FRESH directory created inside `dir` (default: the OS
-// temp dir). dispose() removes only that fresh directory — never the caller's.
-export async function nodeBacking(dir) {
-  const fs = await import('node:fs/promises');
-  const path = await import('node:path');
-  const os = await import('node:os');
-  const parent = dir || os.tmpdir();
-  await fs.mkdir(parent, { recursive: true });
-  const root = await fs.mkdtemp(path.join(parent, 'wfr-'));
+// Browser backing: the Origin Private File System, one file per spill under a fresh directory.
+// On the main thread OPFS writes go through a FileSystemWritableFileStream whose data only becomes
+// readable once it is closed — so each file closes its writer lazily on the first read and reopens
+// it (keeping data) if writing resumes. (A worker could use sync access handles instead.)
+export async function opfsBacking({ root: rootName = 'wfr-scratch' } = {}) {
+  const top = await navigator.storage.getDirectory();
+  const base = await top.getDirectoryHandle(rootName, { create: true });
+  const dirName = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const dir = await base.getDirectoryHandle(dirName, { create: true });
   return {
-    root,
+    root: `${rootName}/${dirName}`,
     async open(name) {
-      const p = path.join(root, name);
-      const fh = await fs.open(p, 'w+');
+      const fh = await dir.getFileHandle(name, { create: true });
+      let w = null, file = null;
+      const writer = async () => { if (!w) { file = null; w = await fh.createWritable({ keepExistingData: true }); } return w; };
       return {
-        write: async (u8, pos) => { await fh.write(u8, 0, u8.length, pos); },
-        read: async (pos, len) => { const b = new Uint8Array(len); await fh.read(b, 0, len, pos); return b; },
-        close: () => fh.close(),
-        remove: () => fs.rm(p, { force: true }),
+        write: async (u8, pos) => { await (await writer()).write({ type: 'write', position: pos, data: u8 }); },
+        read: async (pos, len) => {
+          if (w) { await w.close(); w = null; }
+          if (!file) file = await fh.getFile();
+          return new Uint8Array(await file.slice(pos, pos + len).arrayBuffer());
+        },
+        close: async () => { if (w) { await w.close(); w = null; } },
+        remove: async () => { if (w) { try { await w.abort(); } catch { /* already closed */ } w = null; } await dir.removeEntry(name).catch(() => {}); },
       };
     },
-    async dispose() { await fs.rm(root, { recursive: true, force: true }); },
+    async dispose() { await base.removeEntry(dirName, { recursive: true }).catch(() => {}); },
   };
+}
+
+// Leftover scratch from runs that never disposed (a closed tab mid-conversion): remove it all.
+export async function clearOpfsScratch({ root: rootName = 'wfr-scratch' } = {}) {
+  const top = await navigator.storage.getDirectory();
+  await top.removeEntry(rootName, { recursive: true }).catch(() => {});
 }

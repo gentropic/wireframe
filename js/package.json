@@ -8,15 +8,42 @@
     ".": "./src/index.js",
     "./convert/ply": "./convert/ply.js",
     "./convert/obj": "./convert/obj.js",
-    "./convert/dxf": "./convert/dxf.js"
+    "./convert/dxf": "./convert/dxf.js",
+    "./node": "./src/node.js"
   },
-  "bin": { "wfr": "cli.mjs" },
-  "files": ["src/", "convert/", "cli.mjs"],
-  "peerDependencies": { "@gcu/dxf": "*" },
-  "peerDependenciesMeta": { "@gcu/dxf": { "optional": true } },
+  "bin": {
+    "wfr": "cli.mjs"
+  },
+  "files": [
+    "src/",
+    "convert/",
+    "cli.mjs"
+  ],
+  "peerDependencies": {
+    "@gcu/dxf": "*"
+  },
+  "peerDependenciesMeta": {
+    "@gcu/dxf": {
+      "optional": true
+    }
+  },
   "license": "MIT",
   "author": "Arthur Endlein Correia",
-  "repository": { "type": "git", "url": "git+https://github.com/gentropic/wireframe.git", "directory": "js" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gentropic/wireframe.git",
+    "directory": "js"
+  },
   "homepage": "https://github.com/gentropic/wireframe#readme",
-  "keywords": ["mesh", "wireframe", "parquet", "geology", "mining", "triangles", "dxf", "ply", "obj"]
+  "keywords": [
+    "mesh",
+    "wireframe",
+    "parquet",
+    "geology",
+    "mining",
+    "triangles",
+    "dxf",
+    "ply",
+    "obj"
+  ]
 }

@@ -5,7 +5,7 @@
 import { createReadStream, openSync, writeSync, closeSync } from 'node:fs';
 import { open, stat } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
-import { createWfrWriter, nodeBacking, openWfr } from './src/index.js';
+import { createWfrWriter, nodeBacking, openWfr } from './src/node.js';
 import { convertPly } from './convert/ply.js';
 import { convertObj } from './convert/obj.js';
 import { convertDxf } from './convert/dxf.js';

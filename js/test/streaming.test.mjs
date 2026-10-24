@@ -100,7 +100,7 @@ test('string attributes round-trip; brickBy a string column', async () => {
 });
 
 test('nodeBacking disposes only its own fresh directory, never the one it was given', async () => {
-  const { nodeBacking } = await import('../src/index.js');
+  const { nodeBacking } = await import('../src/node.js');
   const fs = await import('node:fs/promises'), path = await import('node:path'), os = await import('node:os');
   const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'wfr-parent-'));
   await fs.writeFile(path.join(parent, 'keep.txt'), 'x');
