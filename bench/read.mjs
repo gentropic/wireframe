@@ -26,17 +26,20 @@ console.log(`${FILE} — ${(u8.length / 1048576).toFixed(1)} MB · open (zip dir
 const rawOf = (el) => el.meta.counts.vertexRows * (3 * 8 + 4) + el.meta.counts.cells * 3 * 4;
 const valuesOf = (el) => el.meta.counts.vertexRows * 4 + el.meta.counts.cells * 3;
 
-// narrow: decode every column chunk of both tables into per-column preallocated arrays
+// The core columns only (what raw-equiv counts); attributes are left alone by both readers.
+const CORE = new Set(['x', 'y', 'z', 'vid', 'a', 'b', 'c']);
+
+// narrow: decode every core column chunk of both tables into per-column preallocated arrays
 async function narrowAll(el) {
   const out = {};
   for (const table of ['vertices', 'cells']) {
-    const t = el.tables[table], cols = t.footer.rowGroups[0].columns.map((c) => c.name);
+    const t = el.tables[table], cols = t.footer.rowGroups[0].columns.map((c) => c.name).filter((n) => CORE.has(n));
     const bytes = await t.src.read(0, t.src.size); // in-memory: a subarray
     const n = t.footer.numRows;
     for (const name of cols) out[name] = new Int32Array(n);
     let o = 0;
     for (const rg of t.footer.rowGroups) {
-      for (const c of rg.columns) decodeChunk(bytes.subarray(c.start, c.start + c.length), c, out[c.name], o);
+      for (const c of rg.columns) if (CORE.has(c.name)) decodeChunk(bytes.subarray(c.start, c.start + c.length), c, out[c.name], o);
       o += rg.numRows;
     }
   }
@@ -50,8 +53,9 @@ async function hyAll(read, el) {
     const ab = b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
     const n = t.footer.numRows, starts = [0];
     for (const rg of t.footer.rowGroups) starts.push(starts[starts.length - 1] + rg.numRows);
-    for (const c of t.footer.rowGroups[0].columns) out[c.name] = new Int32Array(n);
-    await read({ file: ab, onChunk: ({ columnName, columnData, rowStart }) => { out[columnName].set(columnData, rowStart); } });
+    const columns = t.footer.rowGroups[0].columns.map((c) => c.name).filter((n) => CORE.has(n));
+    for (const name of columns) out[name] = new Int32Array(n);
+    await read({ file: ab, columns, onChunk:({ columnName, columnData, rowStart }) => { out[columnName].set(columnData, rowStart); } });
   }
   return out;
 }

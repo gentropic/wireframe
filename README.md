@@ -16,7 +16,7 @@ point sets), designed to be read without ever being held whole in memory.
   raw size, and decode at gigabytes per second.
 - **Plain formats inside.** Unzip a `.wfr` and every table opens in pyarrow, DuckDB or Polars.
 
-The format of record is [SPEC.md](SPEC.md). Status: **draft 0.1**, no libraries yet.
+The format of record is [SPEC.md](SPEC.md). Status: **draft 0.1**. The JS library reads and writes it (`npm test`; `npm run bench:build && npm run bench:read`); the Python package is next.
 
 ## Layout
 

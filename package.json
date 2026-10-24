@@ -5,10 +5,11 @@
   "scripts": {
     "gen": "node js/tools/gen-unpack.mjs",
     "bench:build": "node bench/build.mjs",
-    "bench:read": "node bench/read.mjs"
+    "bench:read": "node bench/read.mjs",
+    "test": "node --test \"js/test/*.test.mjs\"",
+    "conformance": "uv run --no-project --with pyarrow --with numpy python conformance/pyarrow_check.py && node conformance/read_pyarrow.mjs"
   },
   "devDependencies": {
-    "hyparquet": "1.26.2",
-    "hyparquet-writer": "0.16.1"
+    "hyparquet": "1.26.2"
   }
 }
