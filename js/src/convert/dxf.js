@@ -5,9 +5,10 @@
 // Every element carries the DXF layer (string) and colour (color.r/g/b; unset → white, ACI 7).
 const BATCH = 65536;
 
-/** convertDxf(chunks, writer, { name, spec, dxf }) — dxf: the @gcu/dxf module (imported if absent). */
+/** convertDxf(chunks, writer, { name, spec, dxf }) — dxf: the @gcu/dxf module, passed in (no dynamic import, so browser bundles carry none). */
 export async function convertDxf(chunks, writer, { name = 'dxf', spec = {}, dxf = null } = {}) {
-  const { createSceneStream } = dxf || await import('@gcu/dxf');
+  if (!dxf || !dxf.createSceneStream) throw new Error('convertDxf needs { dxf } — the @gcu/dxf module (or any object with its createSceneStream)');
+  const { createSceneStream } = dxf;
   const els = {};
   const colorAttrs = { 'color.r': 'u8', 'color.g': 'u8', 'color.b': 'u8' };
   const get = (kind) => {

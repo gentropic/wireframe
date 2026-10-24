@@ -6,9 +6,7 @@
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./convert/ply": "./convert/ply.js",
-    "./convert/obj": "./convert/obj.js",
-    "./convert/dxf": "./convert/dxf.js",
+    "./convert": "./src/convert.js",
     "./node": "./src/node.js"
   },
   "bin": {
@@ -16,7 +14,6 @@
   },
   "files": [
     "src/",
-    "convert/",
     "cli.mjs"
   ],
   "peerDependencies": {

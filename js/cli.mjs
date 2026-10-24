@@ -6,9 +6,7 @@ import { createReadStream, openSync, writeSync, closeSync } from 'node:fs';
 import { open, stat } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import { createWfrWriter, nodeBacking, openWfr } from './src/node.js';
-import { convertPly } from './convert/ply.js';
-import { convertObj } from './convert/obj.js';
-import { convertDxf } from './convert/dxf.js';
+import { convertPly, convertObj, convertDxf } from './src/convert.js';
 
 const args = process.argv.slice(2);
 const flag = (n, d) => { const i = args.indexOf('--' + n); if (i < 0) return d; const v = args[i + 1]; args.splice(i, 2); return v; };
@@ -34,7 +32,8 @@ async function convert() {
     const chunks = createReadStream(input, { highWaterMark: 8 << 20 });
     const convs = { '.ply': convertPly, '.obj': convertObj, '.dxf': convertDxf };
     if (!convs[ext]) throw new Error(`don't know how to read ${ext}`);
-    const st = await convs[ext](chunks, wr, { name, spec });
+    const dxf = ext === '.dxf' ? await import('@gcu/dxf').catch(() => { throw new Error('converting DXF needs @gcu/dxf (npm install @gcu/dxf)'); }) : null;
+    const st = await convs[ext](chunks, wr, { name, spec, dxf });
     const t1 = performance.now();
     const { size: bytes, manifest, stats } = await wr.finish({ meta: { lineage: { op: 'convert', source: basename(input), tool: '@gcu/wireframe' } } });
     const t2 = performance.now();

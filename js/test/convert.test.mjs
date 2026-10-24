@@ -2,9 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWfrWriter, openWfr, bytesSource, checkTopology } from '../src/index.js';
-import { convertPly } from '../convert/ply.js';
-import { convertObj } from '../convert/obj.js';
-import { convertDxf } from '../convert/dxf.js';
+import * as dxfModule from '@gcu/dxf';
+import { convertPly, convertObj, convertDxf } from '../src/convert.js';
 
 const te = new TextEncoder();
 async function* chunked(u8, size) { for (let p = 0; p < u8.length; p += size) yield u8.slice(p, p + size); }
@@ -18,7 +17,7 @@ function cube(s = 10, o = [300000, 7500000, 100]) {
 async function convert(fn, bytes, chunk, opts = {}) {
   const parts = [];
   const wr = createWfrWriter({ write: (b) => { parts.push(b.slice()); } }, opts.writer);
-  const st = await fn(chunked(bytes, chunk), wr, { name: 'm', spec: { topology: 'check', ...(opts.spec || {}) } });
+  const st = await fn(chunked(bytes, chunk), wr, { name: 'm', dxf: dxfModule, spec: { topology: 'check', ...(opts.spec || {}) } });
   await wr.finish();
   const n = parts.reduce((s, b) => s + b.length, 0), u = new Uint8Array(n); let o = 0; for (const b of parts) { u.set(b, o); o += b.length; }
   return { st, wfr: await openWfr(bytesSource(u)) };
