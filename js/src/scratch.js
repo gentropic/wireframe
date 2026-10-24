@@ -50,12 +50,15 @@ export function createScratch({ backing = null, budget = Infinity } = {}) {
   return store;
 }
 
-// Node backing: one file per spill under a fresh temp directory.
+// Node backing: one file per spill under a FRESH directory created inside `dir` (default: the OS
+// temp dir). dispose() removes only that fresh directory — never the caller's.
 export async function nodeBacking(dir) {
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
   const os = await import('node:os');
-  const root = dir || await fs.mkdtemp(path.join(os.tmpdir(), 'wfr-'));
+  const parent = dir || os.tmpdir();
+  await fs.mkdir(parent, { recursive: true });
+  const root = await fs.mkdtemp(path.join(parent, 'wfr-'));
   return {
     root,
     async open(name) {

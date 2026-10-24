@@ -99,6 +99,19 @@ test('string attributes round-trip; brickBy a string column', async () => {
   assert.deepEqual([...seen.entries()].sort(), [['PIT_2024', nf / 2], ['PIT_2025', nf / 2]]);
 });
 
+test('nodeBacking disposes only its own fresh directory, never the one it was given', async () => {
+  const { nodeBacking } = await import('../src/index.js');
+  const fs = await import('node:fs/promises'), path = await import('node:path'), os = await import('node:os');
+  const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'wfr-parent-'));
+  await fs.writeFile(path.join(parent, 'keep.txt'), 'x');
+  const b = await nodeBacking(parent);
+  const f = await b.open('s'); await f.write(new Uint8Array([1, 2, 3]), 0); await f.close();
+  await b.dispose();
+  assert.deepEqual(await fs.readdir(parent), ['keep.txt']);
+  const b2 = await nodeBacking(parent); await b2.dispose(); // a second run in the same parent works
+  await fs.rm(parent, { recursive: true });
+});
+
 test('lines from soup: polylines welded at shared points, segment ids kept', async () => {
   const out = collect();
   const wr = createWfrWriter(out.sink, { budget: 32 * 1024, backing: memoryBacking() });
