@@ -1,2 +1,6 @@
 node_modules/
 bench/out/
+python/.venv/
+python/dist/
+__pycache__/
+.pytest_cache/

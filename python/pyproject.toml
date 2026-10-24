@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gcu-wireframe"
+version = "0.0.1"
+description = "Read and write .wfr — brick-aligned Parquet meshes, line networks and point sets in a stored ZIP, read by byte range"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Arthur Endlein Correia" }]
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.21", "pyarrow>=12"]
+keywords = ["mesh", "wireframe", "parquet", "geology", "mining", "triangles", "dxf", "point cloud"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: GIS",
+  "Intended Audience :: Science/Research",
+]
+
+[project.optional-dependencies]
+pyvista = ["pyvista>=0.40"]
+dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://gentropic.org/wireframe/"
+Source = "https://github.com/gentropic/wireframe"
+Specification = "https://gentropic.org/wireframe/0.1/"
+
+[project.scripts]
+wfr-py = "gcu.wireframe.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gcu"]   # PEP 420: no gcu/__init__.py, so gcu.condenser / gcu.dm can be siblings

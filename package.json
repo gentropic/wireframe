@@ -8,9 +8,10 @@
     "bench:read": "node bench/read.mjs",
     "wfr": "node js/cli.mjs",
     "test": "node --test \"js/test/*.test.mjs\"",
-    "conformance": "uv run --no-project --with pyarrow --with numpy python conformance/pyarrow_check.py && node conformance/read_pyarrow.mjs",
+    "conformance": "uv run --no-project --with pyarrow --with numpy python conformance/pyarrow_check.py && node conformance/read_pyarrow.mjs && node conformance/check_golden.mjs testdata/golden.wfr && cd python && uv run python ../conformance/python_golden.py && cd .. && node conformance/check_golden.mjs",
     "site:build": "node site/build.mjs",
-    "site:smoke": "node site/smoke.mjs"
+    "site:smoke": "node site/smoke.mjs",
+    "test:py": "cd python && uv run pytest -q"
   },
   "devDependencies": {
     "@gcu/dxf": "file:../auditable/ext/dxf",

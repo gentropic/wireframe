@@ -1,0 +1,251 @@
+{
+ "spec": "https://gentropic.org/wireframe/0.1",
+ "elements": {
+  "cube": {
+   "kind": "triangles",
+   "counts": {
+    "vertices": 8,
+    "vertexRows": 8,
+    "cells": 12,
+    "bricks": 1
+   },
+   "coords": {
+    "mode": "grid",
+    "origin": [
+     512000,
+     7400000,
+     300
+    ],
+    "step": 0.0001
+   },
+   "topology": {
+    "closed": true,
+    "oriented": true,
+    "manifold": true,
+    "volume": 1000,
+    "status": "checked"
+   },
+   "tables": {
+    "vertices": {
+     "rowGroups": [
+      8
+     ],
+     "columns": {
+      "x": "c9e2a32b2537704ee85c03aecba72fed25c2b3550905f28966548eb175b2985c",
+      "y": "28f95f8e6933da3192c44535e5ac22da582348a81e46bf34216e588f977f8e77",
+      "z": "87635459eeba7c0eef9f2e172fc157bb18c1c150f238bf3a08c6691421db5153",
+      "vid": "450e8dc22b88fca0791203add51a30bee5cc9ae6ee2dde711b27c00a588eec28",
+      "color.r": "e2b60b0e8fd17d018aa44110307146934274c80a9ab5f8a1b700e19c5cf4c803",
+      "color.g": "faa8239f3845986c4745df8710c535746dc4e2b2a4de48766fd66c29b5cb14f1",
+      "color.b": "7cedc20878bbbd9dad81e45bbdeb4fee1639ca179934179fb62e747fb5db9c46"
+     }
+    },
+    "cells": {
+     "rowGroups": [
+      12
+     ],
+     "columns": {
+      "a": "1b21221a8553fe6f7beafad55f72631891dd733cc19235405590605cabf41f53",
+      "b": "799f6f1936644f904fcdef2e7dbd811289fc3c7dc4a18b260ce0b423c247c8f9",
+      "c": "68744869dfb7e40c6348403273f695d7d3c6539e1f83e6f00866a0d67ee8254c"
+     }
+    }
+   }
+  },
+  "terrain": {
+   "kind": "triangles",
+   "counts": {
+    "vertices": 1681,
+    "vertexRows": 1976,
+    "cells": 3200,
+    "bricks": 7
+   },
+   "coords": {
+    "mode": "grid",
+    "origin": [
+     512075,
+     7400028,
+     300
+    ],
+    "step": 0.0001
+   },
+   "topology": {
+    "closed": false,
+    "oriented": true,
+    "manifold": true,
+    "volume": null,
+    "status": "checked"
+   },
+   "tables": {
+    "vertices": {
+     "rowGroups": [
+      312,
+      320,
+      306,
+      309,
+      309,
+      322,
+      98
+     ],
+     "columns": {
+      "x": "5639daab9b77f6714f4bfb2e5ec21105f57d2f89e697bdc2a3a9ebcf8d6e961c",
+      "y": "8d1df9c77d118c84e298f15ab8bd9b360523b71d6fd2be132887994ba1ed4af3",
+      "z": "349bc5ad1a1f6880c6bee452641d43abe9125941bb72906e283b7dca26811a2a",
+      "vid": "c3326750fa7896d0abd8bc03de5af038c963f42a6375a4165dad71094b537b09",
+      "dz": "aa1cca8927d3ce6054f2e53adadb3f1f47877158537e5fc052f77964eae21e76"
+     }
+    },
+    "cells": {
+     "rowGroups": [
+      512,
+      512,
+      512,
+      512,
+      512,
+      512,
+      128
+     ],
+     "columns": {
+      "a": "e520077095e5eb5736888093967d498e8c5804fa04ef0b9a8c86ffda961f80cd",
+      "b": "9ba6f8a7d4d9cd1e718dddfcd5aa56a5ea75805b787dfa33c5d0761e53ceea61",
+      "c": "4c54323ac8c0801384e30b1b13d4a4a6e7702195ecf0c9e0da19c962369c8d51",
+      "domain": "2a1b63056e05e76037d4551fd3492d57522206ec1e8bf8e24151e5c461310348"
+     }
+    }
+   }
+  },
+  "lodes": {
+   "kind": "triangles",
+   "counts": {
+    "vertices": 16,
+    "vertexRows": 28,
+    "cells": 24,
+    "bricks": 4
+   },
+   "coords": {
+    "mode": "grid",
+    "origin": [
+     512000,
+     7400000,
+     300
+    ],
+    "step": 0.0001
+   },
+   "topology": {
+    "closed": true,
+    "oriented": true,
+    "manifold": true,
+    "volume": 2000,
+    "status": "checked"
+   },
+   "tables": {
+    "vertices": {
+     "rowGroups": [
+      8,
+      6,
+      8,
+      6
+     ],
+     "columns": {
+      "x": "eb386dd96c35a867bb6055b830eefb9e6d6676266a52d6341cf03d5561adcba7",
+      "y": "75971314f4876b94164110ed6b097d45b907c955fe15d8217834315279c9a38a",
+      "z": "8ebc534a0c2e173b5b38ded822342c159b982e570e000bab6f84df532215dc28",
+      "vid": "a5fbf8dea8f80209e6df7e7691bf152f5d067f64175e3e0e3d7137c12bfb5212"
+     }
+    },
+    "cells": {
+     "rowGroups": [
+      8,
+      4,
+      8,
+      4
+     ],
+     "columns": {
+      "a": "4a9fa8b8949c3eb766a7d3323c1c8c971938c8f005e1af28d3512d6ca5e2b083",
+      "b": "bd645040ee1a9d258342f0833835a8651f2205b91043955eec435a27093a9b74",
+      "c": "6462b75f113455b51b17fe983402951a4181ba22a0596d924db021ec1bd41db6",
+      "lode": "228c98d408910b0a2471086b97a14b25944a57f63b0990174178bb148cb8c508"
+     }
+    }
+   }
+  },
+  "strings": {
+   "kind": "lines",
+   "counts": {
+    "vertices": 15,
+    "vertexRows": 18,
+    "cells": 12,
+    "bricks": 3
+   },
+   "coords": {
+    "mode": "grid",
+    "origin": [
+     512000,
+     7400050,
+     310
+    ],
+    "step": 0.0001
+   },
+   "topology": null,
+   "tables": {
+    "vertices": {
+     "rowGroups": [
+      6,
+      6,
+      6
+     ],
+     "columns": {
+      "x": "046564ed2e3ad27f0b62b3fb8b0de3537748be2645ecfe28f3e2f3fdcd88db80",
+      "y": "e0d8fb6b0fac591215617c1c9fd2febc2b631324f45b690c56ea1457dc4310e6",
+      "z": "8e4fabb78f12913238afb6c16d7ac26636438c422b4bf684ae3010ff686d8623",
+      "vid": "9c990b5a5cef1bbc0b16e6d6cc768a18c450aaa30a770f6101de0da9a889149c"
+     }
+    },
+    "cells": {
+     "rowGroups": [
+      4,
+      4,
+      4
+     ],
+     "columns": {
+      "a": "e6c480a221c770457d4aa3ad90ceb3b4fe3a07aa0daf6e2211687726b241b919",
+      "b": "ba5f78f5380b2da31dd5e8bb98b96ad96330dcb8c76d3dac48bf9b4019b6f0d7",
+      "layer": "7e7f8df560af158b368024eb964a9486db6e67225fdfe793041db1a456eae25c",
+      "string": "cae7c5333c4f3f62aaa25bc58383b15e89afd8f784dd166db771dd142f0b6740"
+     }
+    }
+   }
+  },
+  "pegs": {
+   "kind": "points",
+   "counts": {
+    "vertices": 300,
+    "vertexRows": 300,
+    "cells": 0,
+    "bricks": 5
+   },
+   "coords": {
+    "mode": "float64"
+   },
+   "topology": null,
+   "tables": {
+    "vertices": {
+     "rowGroups": [
+      64,
+      64,
+      64,
+      64,
+      44
+     ],
+     "columns": {
+      "x": "48781b71c6c251d754ccdf92fbf8cc6d46fd7a07c1a2c5af87e9dcc45e8fa864",
+      "y": "162337515172c905c28931202e1d851b06b53ce615ae3448d39e7c74c014a9c8",
+      "z": "ecf18636a46333993181a6a25b7d30c9b49d63a2446e3b18596fe7cf43293fd5",
+      "layer": "fc62e253ef4b2ede932a7ab81e130a75084f7826317828d9f40ee82a4439157a",
+      "id": "5bb385c330548d2e0b891b36c63ceca9f3363ff25c0dfced11ec5845a2e6d163"
+     }
+    }
+   }
+  }
+ }
+}
