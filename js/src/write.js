@@ -35,6 +35,7 @@ export function createWfrWriter(sink, { budget = Infinity, backing = null, scrat
   const writers = [];
   return {
     ctx,
+    names: () => writers.map((w) => w.name), // element names claimed so far (callers de-duplicate with it)
     element(spec) {
       if (!spec.name) throw new Error('wfr write: element without a name');
       if (writers.some((w) => w.name === spec.name)) throw new Error(`wfr write: duplicate element "${spec.name}"`);
