@@ -11,8 +11,8 @@
                          wf.Points("pegs", xyz, vertex_attributes={"id": ids})])
 """
 from ._read import open, WfrFile, Element, Brick, Mesh, MIMETYPE
-from ._write import write, Triangles, Lines, Points, FORMAT_VERSION, SPEC_URL
+from ._write import write, Triangles, Lines, Polylines, Points, FORMAT_VERSION, SPEC_URL
 from ._topology import check_topology
 
-__all__ = ["open", "write", "Triangles", "Lines", "Points", "WfrFile", "Element", "Brick", "Mesh", "check_topology", "MIMETYPE", "FORMAT_VERSION", "SPEC_URL"]
+__all__ = ["open", "write", "Triangles", "Lines", "Polylines", "Points", "WfrFile", "Element", "Brick", "Mesh", "check_topology", "MIMETYPE", "FORMAT_VERSION", "SPEC_URL"]
 __version__ = "0.0.1"

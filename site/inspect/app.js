@@ -203,6 +203,15 @@ async function deepCheck(E, S, btn, st) {
       if (vidMismatch) S.fail(`${n(vidMismatch)} rows disagree with another row of the same vid on position`, 'SPEC §6.1');
       if (!vidOut && !missing && !vidMismatch) S.pass(`vid dense 0…${n(V - 1)}, and rows sharing a vid share a position${grid ? ' exactly' : ''}`);
     } else if (x.kind !== 'points') S.info('vid check skipped (over 40M vertices)');
+    if (x.kind === 'lines') {
+      const cn = E.tables.cells.footer.rowGroups.length ? E.tables.cells.footer.rowGroups[0].columns.map((c) => c.name) : [];
+      if (cn.includes('line') && cn.includes('seq')) {
+        try {
+          const pl = await E.polylines();
+          S.pass(`${n(pl.length)} polylines chain unbroken in seq order (${pl.filter((p) => p.closed).length} closed)`, 'SPEC §5');
+        } catch (e) { S.fail(e.message.replace(/^wfr: /, ''), 'SPEC §5'); }
+      } else S.info('no line/seq: a network without polyline order', 'SPEC §5');
+    }
     st.textContent = `decoded ${E.bricks} bricks in ${secs} s`;
   } catch (e) { S.fail(`decoding failed: ${e.message}`); st.textContent = ''; btn.disabled = false; }
 }

@@ -510,6 +510,8 @@ export function createElementWriter(spec, ctx) {
     const local = new LocalIndex(target * k);
     const vNames = Object.keys(vA), cNames = Object.keys(cA);
     const tri = new Float64Array(12);
+    const wv = new Float64Array(3), wtab = [null, null, null], wrow = new Int32Array(3);   // soup: one cell's welded corners
+    let dropped = 0;                                       // soup cells collapsed by welding
 
     async function emitBrick(rec, s, e) {
       local.clear();
@@ -517,7 +519,8 @@ export function createElementWriter(spec, ctx) {
       const X = new CT(cap), Y = new CT(cap), Z = new CT(cap), VID = new Int32Array(cap);
       const vat = vNames.map((n) => new ATTR[vA[n]](cap));
       const cells = ccols ? CELL_COLS[spec.kind].map(() => new Int32Array(nc)) : null;
-      let rows = 0, miss = null;
+      let rows = 0, miss = null, nk = 0;                     // nk: cells kept (soup drops collapsed ones)
+      const kept = mode === 'soup' ? new Int32Array(nc) : null;
       const needAttrPages = mode === 'indexed' && vNames.length > 0;
       // records [i, e) synchronously; returns where it stopped (a chunk to load → miss, or a full topology batch)
       const run = (i) => {
@@ -533,14 +536,25 @@ export function createElementWriter(spec, ctx) {
               if (vpage.get(pg) === null) { miss = [vpage, pg]; return i; }
             }
           }
+          // soup: weld every corner first — corners closer than the grid step weld to ONE vertex, and a
+          // cell that collapses that way would repeat a vertex row (SPEC §7.1): it is dropped here,
+          // before it can create rows nothing references
+          if (mode === 'soup') {
+            for (let j = 0; j < k; j++) {
+              const pi = (i * k + j) * 3, x = rec.p[pi], y = rec.p[pi + 1], z = rec.p[pi + 2];
+              const kk = key48(x, y, z), L = leafFor(kk), wt = ucache.get(L.chunk), wr = weldIn(wt, L, kk, x, y, z);
+              wv[j] = L.vidStart + wr; wtab[j] = wt; wrow[j] = wr;
+            }
+            if (wv[0] === wv[1] || (k === 3 && (wv[1] === wv[2] || wv[0] === wv[2]))) { dropped++; continue; }
+            kept[nk] = i - s;
+          }
+          const ci = mode === 'soup' ? nk++ : i - s;
           for (let j = 0; j < k; j++) {
             const pi = (i * k + j) * 3, x = rec.p[pi], y = rec.p[pi + 1], z = rec.p[pi + 2];
             let vid, wt = null, wr = 0;
             if (mode === 'indexed') vid = rank(rec.src[i * k + j]);
-            else if (mode === 'soup') {
-              const kk = key48(x, y, z), L = leafFor(kk);
-              wt = ucache.get(L.chunk); wr = weldIn(wt, L, kk, x, y, z); vid = L.vidStart + wr;
-            } else vid = rec.src[i];
+            else if (mode === 'soup') { vid = wv[j]; wt = wtab[j]; wr = wrow[j]; }
+            else vid = rec.src[i];
             let row = mode === 'points' ? -1 : local.get(vid);
             if (row < 0) {
               row = rows++;
@@ -554,7 +568,7 @@ export function createElementWriter(spec, ctx) {
                 for (let q = 0; q < vNames.length; q++) vat[q][row] = from['V:' + vNames[q]][at];
               }
             }
-            if (cells) cells[j][i - s] = rowBase + row;
+            if (cells) cells[j][ci] = rowBase + row;
             if (check) { tri[4 * j] = vid; tri[4 * j + 1] = x; tri[4 * j + 2] = y; tri[4 * j + 3] = z; }
           }
           if (check) {
@@ -579,17 +593,23 @@ export function createElementWriter(spec, ctx) {
         if (miss) await miss[0].load(miss[1]);
         if (check) { if (linkW.free < 3) await linkW.flush(); if (edgeW.free < 3) await edgeW.flush(); }
       }
+      const ncOut = mode === 'soup' ? nk : nc;
+      if (!ncOut) return;                                  // every cell collapsed: no brick at all
       const vdata = { x: X, y: Y, z: Z, vid: VID };
       vNames.forEach((n, q) => { vdata[n] = toPQ(vat[q], vA[n]); });
       await vps.writeRowGroup(vdata, rows);
       if (cells) {
         const cdata = Object.fromEntries(CELL_COLS[spec.kind].map((n, j) => [n, cells[j]]));
-        for (const n of cNames) cdata[n] = toPQ(rec['C:' + n].subarray(s, e), cA[n]);
-        await cps.writeRowGroup(cdata, nc);
+        for (const n of cNames) {
+          let a = rec['C:' + n].subarray(s, e);
+          if (ncOut < nc) { const g = new a.constructor(ncOut); for (let q = 0; q < ncOut; q++) g[q] = a[kept[q]]; a = g; }
+          cdata[n] = toPQ(a, cA[n]);
+        }
+        await cps.writeRowGroup(cdata, ncOut);
       }
       const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity], C = [X, Y, Z];
       for (let a = 0; a < 3; a++) { const A = C[a]; for (let r = 0; r < rows; r++) { const q = A[r]; if (q < b[a]) b[a] = q; if (q > b[a + 3]) b[a + 3] = q; } }
-      directory.push([rows, ccols ? nc : 0, b.map((q, i) => toWorld(q, i % 3))]);
+      directory.push([rows, ccols ? ncOut : 0, b.map((q, i) => toWorld(q, i % 3))]);
       rowBase += rows; brickCount++;
     }
     async function cut(rec) {
@@ -677,7 +697,7 @@ export function createElementWriter(spec, ctx) {
     ];
     const manifest = {
       name: spec.name, path, kind: spec.kind, coords,
-      counts: { vertices: V, vertexRows: rowBase, cells: spec.kind === 'points' ? 0 : m, bricks: brickCount },
+      counts: { vertices: V, vertexRows: rowBase, cells: spec.kind === 'points' ? 0 : m - dropped, bricks: brickCount },
       bbox: empty ? null : sbox.map((q, i) => toWorld(q, i % 3)), ...(topology ? { topology } : {}),
       bricks: { order: { by: spec.brickBy ? [spec.brickBy] : [], then: 'morton' }, target, directory },
       columns, meta: spec.meta || {},

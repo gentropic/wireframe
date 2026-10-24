@@ -15,7 +15,7 @@
 <header class="top"><a class="brand" href="../">wireframe <span>.wfr</span></a>
 <nav><a href="../0.1/">spec</a><a href="../convert/">convert</a><a href="../inspect/">inspect</a><a href="https://github.com/gentropic/wireframe">source</a><button class="theme" id="themeToggle" title="light / dark">◐</button></nav></header>
 <main class="spec"><aside class="toc"><div class="toc-h">contents</div><a href="#1-overview">1. Overview</a><a href="#2-conventions">2. Conventions</a><a href="#3-container">3. Container</a><a href="#4-manifest-wireframejson">4. Manifest — <code>wireframe.json</code></a><a href="#5-element-kinds">5. Element kinds</a><a href="#6-vertex-table-verticesparquet">6. Vertex table — <code>&lt;path&gt;vertices.parquet</code></a><a href="#7-cell-table-cellsparquet">7. Cell table — <code>&lt;path&gt;cells.parquet</code></a><a href="#8-attributes">8. Attributes</a><a href="#9-meta">9. <code>meta</code></a><a href="#10-integrity-and-signing">10. Integrity and signing</a><a href="#11-core-column-constraints">11. Core-column constraints</a><a href="#12-reserved">12. Reserved</a><a href="#13-reading-by-region-informative">13. Reading by region (informative)</a><a href="#14-candidates-for-02">14. Candidates for 0.2</a></aside><article class="doc">
-<p class="stamp">snapshot of SPEC.md @ gentropic/wireframe 0682659 · <a href="https://github.com/gentropic/wireframe/blob/main/SPEC.md">latest on GitHub</a></p>
+<p class="stamp">snapshot of SPEC.md @ gentropic/wireframe fda8d21 · <a href="https://github.com/gentropic/wireframe/blob/main/SPEC.md">latest on GitHub</a></p>
 <h1 id="the-wireframe-format-wfr-version-01-draft">The wireframe format (<code>.wfr</code>) — version 0.1 (draft)</h1>
 <p>A <code>.wfr</code> file holds one or more spatial <strong>elements</strong> — point sets, line networks, triangle meshes —
 laid out to be read by byte range: open a multi-gigabyte file, find the parts that intersect a
@@ -158,9 +158,24 @@ each list a fixed number of vertex rows:</p>
 <tr><td><code>triangles</code></td><td><code>cells.parquet</code></td><td><code>a</code>, <code>b</code>, <code>c</code></td><td>a face</td></tr>
 </tbody></table>
 <p>Polylines are lines elements: a polyline is a chain of segments, and networks with branches
-(junctions where three or more segments meet) need no special case. Which polyline a segment
-belongs to, and any per-polyline property, is an ordinary attribute on cells. Arcs are densified
-into chords by writers.</p>
+(junctions where three or more segments meet) need no special case. Arcs are densified into chords
+by writers.</p>
+<p><strong>Polyline identity and order.</strong> Bricking sorts segments spatially, so a polyline&#39;s order cannot be
+recovered from geometry alone (a string that revisits a point has two ways out of it; a closed loop
+has no start). When segments come from polylines, writers MUST record them with two reserved cell
+attributes (§8):</p>
+<ul>
+<li><code>line</code> — which polyline the segment belongs to;</li>
+<li><code>seq</code> — the segment&#39;s position along that polyline, counting from 0.</li>
+</ul>
+<p>Within one <code>line</code>, <code>seq</code> values MUST be distinct and increase along the polyline, and each segment
+MUST start at the vertex where the previous one (by <code>seq</code>) ends (equal <code>vid</code>): a polyline is one
+unbroken chain, and a broken one is two lines. Gaps in <code>seq</code> are allowed — a writer that welds by
+position drops segments that collapse to a single vertex, and their neighbours still meet. Segment direction is the polyline&#39;s direction (<code>a</code> → <code>b</code>). A
+polyline is <strong>closed</strong> when its last segment ends at its first segment&#39;s start. To rebuild one:
+take its segments, sort by <code>seq</code>, and chain them. Per-polyline properties (a layer, a name) are
+ordinary cell attributes, repeated on each segment. A network without polyline structure (a
+fracture-trace map) simply omits <code>line</code> and <code>seq</code>.</p>
 <p><code>&quot;tets&quot;</code> (<code>a</code>, <code>b</code>, <code>c</code>, <code>d</code>) is reserved for a future version. Faces with more than three
 vertices are triangulated by writers.</p>
 <h2 id="6-vertex-table-verticesparquet">6. Vertex table — <code>&lt;path&gt;vertices.parquet</code></h2>
@@ -216,6 +231,8 @@ differ.</p>
 not of the brick. They are not <code>vid</code>s.</li>
 <li>A cell MUST NOT repeat a vertex row (<code>a</code>, <code>b</code>, <code>c</code> distinct). Readers SHOULD tolerate cells that
 are geometrically degenerate (distinct rows, coincident positions).</li>
+<li>Cell order within the cells&#39; corners is meaningful: a triangle&#39;s winding (§2), a segment&#39;s
+direction (<code>a</code> → <code>b</code>). Writers MUST preserve both as the source gives them.</li>
 </ul>
 <h3 id="72-the-brick-invariant">7.2 The brick invariant</h3>
 <p>Both tables MUST have exactly <code>counts.bricks</code> row groups, and for every brick <em>k</em>:</p>
@@ -285,6 +302,8 @@ lists.</li>
 <tr><td><code>color.r</code>, <code>color.g</code>, <code>color.b</code>, <code>color.a</code></td><td>either</td><td>colour, UINT8 (<code>a</code> optional)</td></tr>
 <tr><td><code>normal.x</code>, <code>normal.y</code>, <code>normal.z</code></td><td>vertices</td><td>unit normal</td></tr>
 <tr><td><code>src_id</code></td><td>either</td><td>the source&#39;s own identifier for the vertex or cell, for faithful round trips</td></tr>
+<tr><td><code>line</code></td><td>cells (lines)</td><td>INT32 or INT64: the polyline a segment belongs to (§5)</td></tr>
+<tr><td><code>seq</code></td><td>cells (lines)</td><td>INT32: the segment&#39;s position along its polyline, from 0 (§5); present only with <code>line</code></td></tr>
 <tr><td><code>uv.u</code>, <code>uv.v</code></td><td>vertices</td><td>reserved for texture coordinates</td></tr>
 </tbody></table>
 <h2 id="9-meta">9. <code>meta</code></h2>

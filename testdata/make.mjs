@@ -6,7 +6,7 @@
 // the bricking algorithm (Morton keys, stable sort, cuts, first-use rows) is shared, not just the format.
 //   node testdata/make.mjs            (regenerate — only when the format or the reference writer changes)
 import { writeFileSync, readFileSync } from 'node:fs';
-import { writeWfr } from '../js/src/index.js';
+import { writeWfr, linesFromPolylines } from '../js/src/index.js';
 import { summarize } from './summarize.mjs';
 
 let seed = 20261024;
@@ -31,13 +31,17 @@ const domain = Array.from({ length: terrF2.length / 3 }, (_, f) => (f * 7) % 5);
 const lodeP = [...cubeP, ...cubeP.map((v, i) => v + (i % 3 === 2 ? 0 : 30))];
 const lodeF = [...cubeF, ...cubeF.map((v) => v + 8)];
 const lode = [...Array(12).fill('north'), ...Array(12).fill('south')];
-// strings: three polylines, indexed segments with layer + string id
-const strP = [], strS = [], layer = [], sid = [];
-[['CREST', 6], ['TOE', 5], ['CREST', 4]].forEach(([L, m], s) => {
-  const base = strP.length / 3;
-  for (let i = 0; i < m; i++) strP.push(r3(512000 + i * 3), r3(7400050 + s * 7), r3(310 + i * 0.5));
-  for (let i = 0; i + 1 < m; i++) { strS.push(base + i, base + i + 1); layer.push(L); sid.push(s); }
-});
+// strings: polylines with order (SPEC §5 line + seq) — two open strings, a switchback that revisits
+// a point (an open string whose 5th vertex sits on its 2nd), and a closed pit outline
+const polys = [
+  { L: 'CREST', p: [[0, 50, 310], [3, 50, 310.5], [6, 50, 311], [9, 50, 311.5], [12, 50, 312], [15, 50, 312.5]] },
+  { L: 'TOE', p: [[0, 57, 300], [3, 57, 300.5], [6, 57, 301], [9, 57, 301.5], [12, 57, 302]] },
+  { L: 'RAMP', p: [[20, 40, 305], [24, 40, 306], [28, 44, 307], [24, 48, 308], [24, 40, 306], [20, 36, 309]] },
+  { L: 'PIT', p: [[40, 40, 290], [60, 40, 290], [60, 60, 290], [40, 60, 290]], closed: true },
+].map((q) => ({ ...q, positions: Float64Array.from(q.p.flatMap(([x, y, z]) => [r3(512000 + x), r3(7400000 + y), r3(z)])) }));
+const pl = linesFromPolylines(polys);
+const strP = [...pl.positions], strS = [...pl.cells], lineId = [...pl.cellAttributes.line], seqs = [...pl.cellAttributes.seq];
+const layer = lineId.map((id) => polys[id].L);
 // pegs: float64 points with a label and an id
 const pegP = [], pegL = [], pegId = [];
 for (let i = 0; i < 300; i++) { pegP.push(512000 + rnd() * 80, 7400000 + rnd() * 80, 290 + rnd() * 30); pegL.push(['A', 'B', 'C'][i % 3]); pegId.push(i * 11); }
@@ -48,7 +52,7 @@ const inputs = {
     { name: 'cube', kind: 'triangles', positions: cubeP, cells: cubeF, topology: 'check', vertexAttributes: { 'color.r': { type: 'u8', values: [0, 40, 80, 120, 160, 200, 240, 255] }, 'color.g': { type: 'u8', values: Array(8).fill(64) }, 'color.b': { type: 'u8', values: Array(8).fill(190) } } },
     { name: 'terrain', kind: 'triangles', positions: terrP2, cells: terrF2, target: 512, topology: 'check', vertexAttributes: { dz: { type: 'f32', values: dz } }, cellAttributes: { domain: { type: 'i32', values: domain } } },
     { name: 'lodes', kind: 'triangles', positions: lodeP, cells: lodeF, target: 8, brickBy: 'lode', topology: 'check', cellAttributes: { lode: { type: 'string', values: lode } } },
-    { name: 'strings', kind: 'lines', positions: strP, cells: strS, target: 4, cellAttributes: { layer: { type: 'string', values: layer }, string: { type: 'i32', values: sid } } },
+    { name: 'strings', kind: 'lines', positions: strP, cells: strS, target: 4, cellAttributes: { layer: { type: 'string', values: layer }, line: { type: 'i32', values: lineId }, seq: { type: 'i32', values: seqs } } },
     { name: 'pegs', kind: 'points', positions: pegP, coords: { mode: 'float64' }, target: 64, vertexAttributes: { layer: { type: 'string', values: pegL }, id: { type: 'i32', values: pegId } } },
   ],
 };

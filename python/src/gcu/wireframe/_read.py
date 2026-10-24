@@ -161,6 +161,40 @@ class Element:
         ca = {n: _np(ct.column(n)) for n in ct.column_names if n not in _CORE}
         return Mesh(verts, cells, va, ca)
 
+    def polylines(self):
+        """A lines element's polylines in order (SPEC §5: `line` + `seq`), world coordinates.
+        → [{"line": id, "vertices": (n, 3), "vids": (n,), "closed": bool}] sorted by line id; a closed
+        polyline's closing point is not repeated. Raises if a line repeats a seq or its chain breaks."""
+        if self.kind != "lines":
+            raise ValueError(f"wfr: {self.name!r} is {self.kind}, not lines")
+        cn = self.tables["cells"].schema_arrow.names
+        if "line" not in cn or "seq" not in cn:
+            raise ValueError(f"wfr: {self.name!r} carries no polyline structure (no line/seq attributes)")
+        vt = self.tables["vertices"].read(columns=["x", "y", "z", "vid"])
+        pos = self._world(vt.column("x").to_numpy(), vt.column("y").to_numpy(), vt.column("z").to_numpy())
+        vid = vt.column("vid").to_numpy().astype(np.int64)
+        ct = self.tables["cells"].read(columns=["a", "b", "line", "seq"])
+        a, b = ct.column("a").to_numpy().astype(np.int64), ct.column("b").to_numpy().astype(np.int64)
+        ln, sq = ct.column("line").to_numpy().astype(np.int64), ct.column("seq").to_numpy().astype(np.int64)
+        o = np.lexsort((sq, ln))
+        a, b, ln, sq = a[o], b[o], ln[o], sq[o]
+        va, vb = vid[a], vid[b]
+        same = ln[1:] == ln[:-1]
+        if (same & (sq[1:] == sq[:-1])).any():
+            raise ValueError(f"wfr: a line repeats a seq (SPEC §5)")
+        brk = same & (vb[:-1] != va[1:])
+        if brk.any():
+            raise ValueError(f"wfr: line {int(ln[1:][brk][0])} breaks its chain (SPEC §5)")
+        starts = np.concatenate([[0], np.nonzero(~same)[0] + 1, [len(ln)]])
+        out = []
+        for s, e in zip(starts[:-1], starts[1:]):
+            if s == e:
+                continue
+            closed = bool(e - s > 1 and vb[e - 1] == va[s])
+            rows = a[s:e] if closed else np.concatenate([a[s:e], b[e - 1:e]])
+            out.append({"line": int(ln[s]), "vertices": pos[rows], "vids": vid[rows], "closed": closed})
+        return out
+
     def to_pyvista(self):
         """A pyvista PolyData (needs `pip install gcu-wireframe[pyvista]`)."""
         import pyvista as pv

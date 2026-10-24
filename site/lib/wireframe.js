@@ -1,4 +1,4 @@
-// @gcu/wireframe (src/index.js) @ 0682659 — built by site/build.mjs (MIT)
+// @gcu/wireframe (src/index.js) @ fda8d21 — built by site/build.mjs (MIT)
 
 // ── src/zip.js ──
 
@@ -2238,6 +2238,67 @@ function decodeChunk$parquet(bytes, col, out, o = 0) {
   return out;
 }
 
+// ── src/polylines.js ──
+
+// Polylines ↔ lines elements (SPEC §5): segments carry `line` (which polyline) and `seq` (position
+// along it, from 0), so order survives bricking — a string that revisits a point, a closed loop's
+// start, the direction of travel.
+
+/**
+ * linesFromPolylines(polylines) → { positions, cells, cellAttributes: { line, seq } } — input for a
+ * lines element (writeWfr / createWfrWriter). Each polyline is a Float64Array of xyz triples (world),
+ * or { positions, closed }; a closed one gets a final segment back to its first vertex. Every
+ * polyline keeps its own vertices, so a string that crosses itself is never confused with its
+ * crossing. Polylines with fewer than 2 vertices are skipped (their line id is still consumed).
+ */
+function linesFromPolylines(polylines) {
+  let nv = 0, ns = 0;
+  const items = polylines.map((p) => (ArrayBuffer.isView(p) || Array.isArray(p) ? { positions: p, closed: false } : p));
+  for (const { positions, closed } of items) {
+    const n = positions.length / 3;
+    if (n < 2) continue;
+    nv += n; ns += n - 1 + (closed && n > 2 ? 1 : 0);
+  }
+  const positions = new Float64Array(3 * nv), cells = new Uint32Array(2 * ns), line = new Int32Array(ns), seq = new Int32Array(ns);
+  let v = 0, s = 0;
+  items.forEach(({ positions: P, closed }, id) => {
+    const n = P.length / 3;
+    if (n < 2) return;
+    positions.set(P, 3 * v);
+    let q = 0;
+    for (let i = 0; i + 1 < n; i++, s++, q++) { cells[2 * s] = v + i; cells[2 * s + 1] = v + i + 1; line[s] = id; seq[s] = q; }
+    if (closed && n > 2) { cells[2 * s] = v + n - 1; cells[2 * s + 1] = v; line[s] = id; seq[s] = q; s++; }
+    v += n;
+  });
+  return { positions, cells, cellAttributes: { line, seq } };
+}
+
+/**
+ * Rebuild polylines from decoded segments. segs: arrays aligned by segment — line, seq, va/vb (vids),
+ * and A/B (xyz, 3 per segment). → [{ line, vertices: Float64Array (xyz, open: n+1 points, closed:
+ * n — the closing point is not repeated), vids: Int32Array, closed }] sorted by line id.
+ * Throws when a line repeats a seq or its chain breaks (SPEC §5); gaps in seq are fine.
+ */
+function chainPolylines({ line, seq, va, vb, A, B }) {
+  const n = line.length, byLine = new Map();
+  for (let i = 0; i < n; i++) { let a = byLine.get(line[i]); if (!a) byLine.set(line[i], a = []); a.push(i); }
+  const out = [];
+  for (const id of [...byLine.keys()].sort((x, y) => x - y)) {
+    const segs = byLine.get(id).sort((x, y) => seq[x] - seq[y]);
+    for (let k = 1; k < segs.length; k++) {
+      if (seq[segs[k]] === seq[segs[k - 1]]) throw new Error(`wfr: line ${id} repeats seq ${seq[segs[k]]} (SPEC §5)`);
+      if (vb[segs[k - 1]] !== va[segs[k]]) throw new Error(`wfr: line ${id} breaks between seq ${seq[segs[k - 1]]} and ${seq[segs[k]]} (SPEC §5)`);
+    }
+    const last = segs[segs.length - 1], closed = segs.length > 1 && vb[last] === va[segs[0]];
+    const m = closed ? segs.length : segs.length + 1;
+    const vertices = new Float64Array(3 * m), vids = new Int32Array(m);
+    segs.forEach((s, k) => { vertices.set(A.subarray(3 * s, 3 * s + 3), 3 * k); vids[k] = va[s]; });
+    if (!closed) { vertices.set(B.subarray(3 * last, 3 * last + 3), 3 * segs.length); vids[segs.length] = vb[last]; }
+    out.push({ line: id, vertices, vids, closed });
+  }
+  return out;
+}
+
 // ── src/wfr.js ──
 
 // Reading .wfr files: open → manifest + per-element footers → bricks decoded on demand.
@@ -2340,6 +2401,30 @@ class Element {
     const out = {};
     for (const c of cols) out[c.name] = decodeChunk$parquet(bytes.subarray(c.start - lo, c.start - lo + c.length), c);
     return out;
+  }
+
+  // A lines element's polylines, in order (SPEC §5: `line` + `seq`), world coordinates.
+  // → [{ line, vertices: Float64Array, vids: Int32Array, closed }]. Reads every brick.
+  async polylines() {
+    if (this.kind !== 'lines') throw new Error(`wfr: "${this.name}" is ${this.kind}, not lines`);
+    const cols = this.tables.cells.footer.rowGroups.length ? this.tables.cells.footer.rowGroups[0].columns.map((c) => c.name) : [];
+    if (cols.length && !(cols.includes('line') && cols.includes('seq'))) throw new Error(`wfr: "${this.name}" carries no polyline structure (no line/seq attributes)`);
+    const c = this.coords, s = c.mode === 'grid' ? (Array.isArray(c.step) ? c.step : [c.step, c.step, c.step]) : null;
+    const W = (v, a) => (s ? c.origin[a] + s[a] * v : v);
+    const n = this.meta.counts.cells;
+    const line = new Float64Array(n), seq = new Int32Array(n), va = new Int32Array(n), vb = new Int32Array(n), A = new Float64Array(3 * n), B = new Float64Array(3 * n);
+    let o = 0;
+    for (let k = 0; k < this.bricks; k++) {
+      const b = await this.readBrick(k, { vid: true });
+      const at = await this.readRowGroup('cells', k, ['line', 'seq']);
+      for (let i = 0; i < at.line.length; i++, o++) {
+        const ra = b.cells[2 * i], rb = b.cells[2 * i + 1];
+        line[o] = at.line[i]; seq[o] = at.seq[i]; va[o] = b.vid[ra]; vb[o] = b.vid[rb];
+        A[3 * o] = W(b.x[ra], 0); A[3 * o + 1] = W(b.y[ra], 1); A[3 * o + 2] = W(b.z[ra], 2);
+        B[3 * o] = W(b.x[rb], 0); B[3 * o + 1] = W(b.y[rb], 1); B[3 * o + 2] = W(b.z[rb], 2);
+      }
+    }
+    return chainPolylines({ line, seq, va, vb, A, B });
   }
 
   // Brick k → { x, y, z (stored units), vid?, cells (brick-LOCAL indices, interleaved) }.
@@ -3322,6 +3407,8 @@ function createElementWriter(spec, ctx) {
     const local = new LocalIndex(target * k);
     const vNames = Object.keys(vA), cNames = Object.keys(cA);
     const tri = new Float64Array(12);
+    const wv = new Float64Array(3), wtab = [null, null, null], wrow = new Int32Array(3);   // soup: one cell's welded corners
+    let dropped = 0;                                       // soup cells collapsed by welding
 
     async function emitBrick(rec, s, e) {
       local.clear();
@@ -3329,7 +3416,8 @@ function createElementWriter(spec, ctx) {
       const X = new CT(cap), Y = new CT(cap), Z = new CT(cap), VID = new Int32Array(cap);
       const vat = vNames.map((n) => new ATTR[vA[n]](cap));
       const cells = ccols ? CELL_COLS[spec.kind].map(() => new Int32Array(nc)) : null;
-      let rows = 0, miss = null;
+      let rows = 0, miss = null, nk = 0;                     // nk: cells kept (soup drops collapsed ones)
+      const kept = mode === 'soup' ? new Int32Array(nc) : null;
       const needAttrPages = mode === 'indexed' && vNames.length > 0;
       // records [i, e) synchronously; returns where it stopped (a chunk to load → miss, or a full topology batch)
       const run = (i) => {
@@ -3345,14 +3433,25 @@ function createElementWriter(spec, ctx) {
               if (vpage.get(pg) === null) { miss = [vpage, pg]; return i; }
             }
           }
+          // soup: weld every corner first — corners closer than the grid step weld to ONE vertex, and a
+          // cell that collapses that way would repeat a vertex row (SPEC §7.1): it is dropped here,
+          // before it can create rows nothing references
+          if (mode === 'soup') {
+            for (let j = 0; j < k; j++) {
+              const pi = (i * k + j) * 3, x = rec.p[pi], y = rec.p[pi + 1], z = rec.p[pi + 2];
+              const kk = key48(x, y, z), L = leafFor(kk), wt = ucache.get(L.chunk), wr = weldIn(wt, L, kk, x, y, z);
+              wv[j] = L.vidStart + wr; wtab[j] = wt; wrow[j] = wr;
+            }
+            if (wv[0] === wv[1] || (k === 3 && (wv[1] === wv[2] || wv[0] === wv[2]))) { dropped++; continue; }
+            kept[nk] = i - s;
+          }
+          const ci = mode === 'soup' ? nk++ : i - s;
           for (let j = 0; j < k; j++) {
             const pi = (i * k + j) * 3, x = rec.p[pi], y = rec.p[pi + 1], z = rec.p[pi + 2];
             let vid, wt = null, wr = 0;
             if (mode === 'indexed') vid = rank(rec.src[i * k + j]);
-            else if (mode === 'soup') {
-              const kk = key48(x, y, z), L = leafFor(kk);
-              wt = ucache.get(L.chunk); wr = weldIn(wt, L, kk, x, y, z); vid = L.vidStart + wr;
-            } else vid = rec.src[i];
+            else if (mode === 'soup') { vid = wv[j]; wt = wtab[j]; wr = wrow[j]; }
+            else vid = rec.src[i];
             let row = mode === 'points' ? -1 : local.get(vid);
             if (row < 0) {
               row = rows++;
@@ -3366,7 +3465,7 @@ function createElementWriter(spec, ctx) {
                 for (let q = 0; q < vNames.length; q++) vat[q][row] = from['V:' + vNames[q]][at];
               }
             }
-            if (cells) cells[j][i - s] = rowBase + row;
+            if (cells) cells[j][ci] = rowBase + row;
             if (check) { tri[4 * j] = vid; tri[4 * j + 1] = x; tri[4 * j + 2] = y; tri[4 * j + 3] = z; }
           }
           if (check) {
@@ -3391,17 +3490,23 @@ function createElementWriter(spec, ctx) {
         if (miss) await miss[0].load(miss[1]);
         if (check) { if (linkW.free < 3) await linkW.flush(); if (edgeW.free < 3) await edgeW.flush(); }
       }
+      const ncOut = mode === 'soup' ? nk : nc;
+      if (!ncOut) return;                                  // every cell collapsed: no brick at all
       const vdata = { x: X, y: Y, z: Z, vid: VID };
       vNames.forEach((n, q) => { vdata[n] = toPQ(vat[q], vA[n]); });
       await vps.writeRowGroup(vdata, rows);
       if (cells) {
         const cdata = Object.fromEntries(CELL_COLS[spec.kind].map((n, j) => [n, cells[j]]));
-        for (const n of cNames) cdata[n] = toPQ(rec['C:' + n].subarray(s, e), cA[n]);
-        await cps.writeRowGroup(cdata, nc);
+        for (const n of cNames) {
+          let a = rec['C:' + n].subarray(s, e);
+          if (ncOut < nc) { const g = new a.constructor(ncOut); for (let q = 0; q < ncOut; q++) g[q] = a[kept[q]]; a = g; }
+          cdata[n] = toPQ(a, cA[n]);
+        }
+        await cps.writeRowGroup(cdata, ncOut);
       }
       const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity], C = [X, Y, Z];
       for (let a = 0; a < 3; a++) { const A = C[a]; for (let r = 0; r < rows; r++) { const q = A[r]; if (q < b[a]) b[a] = q; if (q > b[a + 3]) b[a + 3] = q; } }
-      directory.push([rows, ccols ? nc : 0, b.map((q, i) => toWorld(q, i % 3))]);
+      directory.push([rows, ccols ? ncOut : 0, b.map((q, i) => toWorld(q, i % 3))]);
       rowBase += rows; brickCount++;
     }
     async function cut(rec) {
@@ -3489,7 +3594,7 @@ function createElementWriter(spec, ctx) {
     ];
     const manifest = {
       name: spec.name, path, kind: spec.kind, coords,
-      counts: { vertices: V, vertexRows: rowBase, cells: spec.kind === 'points' ? 0 : m, bricks: brickCount },
+      counts: { vertices: V, vertexRows: rowBase, cells: spec.kind === 'points' ? 0 : m - dropped, bricks: brickCount },
       bbox: empty ? null : sbox.map((q, i) => toWorld(q, i % 3)), ...(topology ? { topology } : {}),
       bricks: { order: { by: spec.brickBy ? [spec.brickBy] : [], then: 'morton' }, target, directory },
       columns, meta: spec.meta || {},
@@ -3671,6 +3776,8 @@ export {
   opfsBacking,
   clearOpfsScratch,
   checkTopology,
+  linesFromPolylines,
+  chainPolylines,
   openZip,
   createZipWriter,
   bytesSource,

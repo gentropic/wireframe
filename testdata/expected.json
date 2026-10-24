@@ -172,10 +172,10 @@
   "strings": {
    "kind": "lines",
    "counts": {
-    "vertices": 15,
-    "vertexRows": 18,
-    "cells": 12,
-    "bricks": 3
+    "vertices": 21,
+    "vertexRows": 26,
+    "cells": 18,
+    "bricks": 5
    },
    "coords": {
     "mode": "grid",
@@ -190,28 +190,33 @@
    "tables": {
     "vertices": {
      "rowGroups": [
+      5,
+      5,
+      7,
       6,
-      6,
-      6
+      3
      ],
      "columns": {
-      "x": "046564ed2e3ad27f0b62b3fb8b0de3537748be2645ecfe28f3e2f3fdcd88db80",
-      "y": "e0d8fb6b0fac591215617c1c9fd2febc2b631324f45b690c56ea1457dc4310e6",
-      "z": "8e4fabb78f12913238afb6c16d7ac26636438c422b4bf684ae3010ff686d8623",
-      "vid": "9c990b5a5cef1bbc0b16e6d6cc768a18c450aaa30a770f6101de0da9a889149c"
+      "x": "7092dff5503d5fa4a9f838cb90fef9e0ca36fbe5d9a742c0628e719babf19121",
+      "y": "e17dbaf12cc7bba4473b11cfad1fa0622c99b9273cefd867c5e031a06b062cb4",
+      "z": "80f738280e4706f7b4193ff8e5fcdf732a7f941cdbb85689d6b6d37fb5d04658",
+      "vid": "ed60fe026e8a12022c18c6011b42bf3fad9c3ee88782f0b8a4d9be9dc43258b4"
      }
     },
     "cells": {
      "rowGroups": [
       4,
       4,
-      4
+      4,
+      4,
+      2
      ],
      "columns": {
-      "a": "e6c480a221c770457d4aa3ad90ceb3b4fe3a07aa0daf6e2211687726b241b919",
-      "b": "ba5f78f5380b2da31dd5e8bb98b96ad96330dcb8c76d3dac48bf9b4019b6f0d7",
-      "layer": "7e7f8df560af158b368024eb964a9486db6e67225fdfe793041db1a456eae25c",
-      "string": "cae7c5333c4f3f62aaa25bc58383b15e89afd8f784dd166db771dd142f0b6740"
+      "a": "3d7d52936f742638a7ce3a4a2d8bdf664bba7a20722ab117988032e77093d2b1",
+      "b": "5e9e616f3478a47cc6d7459d208c4a3555dae4722675b801bfe8a0d9aaa26157",
+      "layer": "27a2e42d3c8a7139f9f468c17efe09b829bd0e628c1c40480b155e5e0bbd459b",
+      "line": "b8bfb3e271f9f7aa92a0c88e547cf1ac30596a29ce181d33de8bebe255254a1e",
+      "seq": "d1a6aef780456f00e1caeb3fc7912bf13579758428bca5b932427fe6bc3bd015"
      }
     }
    }

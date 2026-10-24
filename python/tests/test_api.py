@@ -43,7 +43,7 @@ def test_open_and_query_golden():
         p = f["pegs"].to_mesh()
         assert p.vertices.shape == (300, 3) and set(p.vertex_attributes["layer"].tolist()) == {"A", "B", "C"}
         s = f["strings"].to_mesh()
-        assert s.cells.shape == (12, 2) and set(s.cell_attributes["layer"].tolist()) == {"CREST", "TOE"}
+        assert s.cells.shape == (18, 2) and set(s.cell_attributes["layer"].tolist()) == {"CREST", "TOE", "RAMP", "PIT"}
 
 
 def test_roundtrip_faces_and_positions(tmp_path):
@@ -92,6 +92,35 @@ def test_topology():
     PP = np.concatenate([P, P2])
     t4 = wf.check_topology(FF, PP[FF], None)
     assert t4["closed"] and not t4["manifold"]
+
+
+def test_golden_polylines_keep_order():
+    with wf.open(TD / "golden.wfr") as f:
+        pl = f["strings"].polylines()
+    assert [p["line"] for p in pl] == [0, 1, 2, 3]
+    assert [len(p["vertices"]) for p in pl] == [6, 5, 6, 4]
+    assert [p["closed"] for p in pl] == [False, False, False, True]
+    ramp = pl[2]["vertices"] - [512000, 7400000, 0]
+    assert np.allclose(ramp[[1, 4]], [[24, 40, 306], [24, 40, 306]]) and np.allclose(ramp[3], [24, 48, 308])
+    pit = pl[3]["vertices"] - [512000, 7400000, 0]
+    assert np.allclose(pit[0], [40, 40, 290]), "a closed loop starts where it started"
+
+
+def test_polylines_roundtrip(tmp_path):
+    rng = np.random.default_rng(5)
+    polys = [rng.random((n, 3)) * 100 + [512000, 7400000, 0] for n in (2, 7, 30, 4)]
+    polys[2][17] = polys[2][3]                              # revisits a point
+    out = tmp_path / "pl.wfr"
+    wf.write(out, [wf.Polylines("s", polys, closed=[False, False, False, True], target=4, cell_attributes={"name": ["a", "b", "c", "d"]})])
+    with wf.open(out) as f:
+        el = f["s"]
+        assert el.n_bricks > 5
+        got = el.polylines()
+        names = el.to_mesh().cell_attributes["name"]
+    assert [g["closed"] for g in got] == [False, False, False, True]
+    for g, p in zip(got, polys):
+        assert np.abs(g["vertices"] - p).max() <= 0.5e-4 + 1e-9
+    assert set(names.tolist()) == {"a", "b", "c", "d"}
 
 
 def test_errors(tmp_path):

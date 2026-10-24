@@ -76,7 +76,7 @@ for (const btn of await p.locator('button', { hasText: 'deep check' }).all()) aw
 await p.locator('button', { hasText: 'verify SHA-256' }).click();
 await p.waitForFunction(() => /all \d+ members match/.test(document.body.textContent) && [...document.querySelectorAll('.status')].filter((s) => /decoded/.test(s.textContent)).length === 4, null, { timeout: 60000 });
 const after = await p.evaluate(() => ({ fail: [...document.querySelectorAll('.checks li.fail')].map((l) => l.textContent), invariant: document.querySelectorAll('.checks li.pass').length, text: document.body.textContent }));
-chk('inspect: deep check passes on every element (invariant, used rows, dense vid), hashes match', after.fail.length === 0 && /brick invariant holds/.test(after.text) && /vid dense/.test(after.text) && /members match their SHA-256/.test(after.text));
+chk('inspect: deep check passes on every element (invariant, used rows, dense vid, polyline chains), hashes match', after.fail.length === 0 && /brick invariant holds/.test(after.text) && /vid dense/.test(after.text) && /polylines chain unbroken/.test(after.text) && /members match their SHA-256/.test(after.text));
 if (shots) await p.screenshot({ path: join(site, '../bench/out/site-inspect.png'), fullPage: true });
 chk('no console errors or CSP violations on any page', errors.length === 0);
 if (errors.length) console.log(errors);

@@ -52,6 +52,41 @@ def Lines(name, vertices, segments, **kw):
     return _Element(name, "lines", np.asarray(vertices, np.float64), np.asarray(segments), **kw)
 
 
+def Polylines(name, polylines, closed=False, cell_attributes=None, **kw):
+    """A lines element from ordered polylines, keeping their order (SPEC §5: `line` + `seq`).
+    polylines: a list of (n, 3) arrays; closed: one bool for all, or a list (a closed polyline gets a
+    final segment back to its first vertex). Each polyline keeps its own vertices, so a string that
+    revisits a point stays unambiguous. cell_attributes may hold per-POLYLINE values (one per
+    polyline), spread to every segment of it."""
+    pts, cells, line, seq, owner = [], [], [], [], []
+    base = 0
+    for i, p in enumerate(polylines):
+        p = np.asarray(p, np.float64).reshape(-1, 3)
+        n = len(p)
+        c = closed[i] if isinstance(closed, (list, tuple, np.ndarray)) else closed
+        if n < 2:
+            continue
+        idx = np.arange(base, base + n)
+        segs = np.stack([idx[:-1], idx[1:]], axis=1)
+        if c and n > 2:
+            segs = np.vstack([segs, [[idx[-1], idx[0]]]])
+        pts.append(p); cells.append(segs)
+        line.append(np.full(len(segs), i, np.int32)); seq.append(np.arange(len(segs), dtype=np.int32)); owner.append(np.full(len(segs), i))
+        base += n
+    P = np.concatenate(pts) if pts else np.zeros((0, 3))
+    S = np.concatenate(cells) if cells else np.zeros((0, 2), np.int64)
+    own = np.concatenate(owner) if owner else np.zeros(0, np.int64)
+    ca = {}
+    for k_, v in (cell_attributes or {}).items():
+        arr = np.asarray(v, dtype=object if len(v) and isinstance(v[0], str) else None)
+        if len(arr) != len(polylines):
+            raise ValueError(f"wfr write: polyline attribute {k_!r} needs one value per polyline ({len(polylines)})")
+        ca[k_] = arr[own].tolist() if arr.dtype == object else arr[own]
+    ca["line"] = np.concatenate(line) if line else np.zeros(0, np.int32)
+    ca["seq"] = np.concatenate(seq) if seq else np.zeros(0, np.int32)
+    return _Element(name, "lines", P, S, cell_attributes=ca, **kw)
+
+
 def Points(name, points, **kw):
     """A point-set element. points: (n, 3)."""
     return _Element(name, "points", np.asarray(points, np.float64), None, **kw)

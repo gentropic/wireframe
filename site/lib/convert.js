@@ -1,4 +1,4 @@
-// @gcu/wireframe (src/convert.js) @ 0682659 — built by site/build.mjs (MIT)
+// @gcu/wireframe (src/convert.js) @ fda8d21 — built by site/build.mjs (MIT)
 
 // ── src/convert/bytes-in.js ──
 
@@ -275,10 +275,10 @@ async function convertDxf(chunks, writer, { name = 'dxf', spec = {}, dxf = null 
   const get = (kind) => {
     if (els[kind]) return els[kind];
     const nm = kind === 'triangles' ? name : `${name}:${kind === 'lines' ? 'strings' : 'points'}`;
-    const attrs = { layer: 'string', ...colorAttrs, ...(kind === 'lines' ? { string: 'i32' } : {}) };
+    const attrs = { layer: 'string', ...colorAttrs, ...(kind === 'lines' ? { line: 'i32', seq: 'i32' } : {}) };   // line + seq: polyline order (SPEC §5)
     const w = writer.element({ name: nm, kind, ...spec, ...(kind === 'points' ? { vertexAttributes: attrs } : { cellAttributes: attrs }) });
     const loc = kind === 'points' ? 'vertices' : 'cells';
-    return (els[kind] = { w, loc, P: [], L: [], R: [], Gc: [], B: [], S: [], layerCode: new Map() });
+    return (els[kind] = { w, loc, P: [], L: [], R: [], Gc: [], B: [], S: [], Q: [], layerCode: new Map() });
   };
   const code = (e, layer) => { let c = e.layerCode.get(layer); if (c === undefined) { c = e.w.label('layer', layer, e.loc); e.layerCode.set(layer, c); } return c; };
   const col = (e, rgb) => { if (rgb) { e.R.push(rgb[0]); e.Gc.push(rgb[1]); e.B.push(rgb[2]); } else { e.R.push(255); e.Gc.push(255); e.B.push(255); } };
@@ -291,10 +291,11 @@ async function convertDxf(chunks, writer, { name = 'dxf', spec = {}, dxf = null 
     },
     string(l, rgb, pts) {
       const e = get('lines'), n = pts.length / 3, c = code(e, l), id = strings++;
+      let q = 0;   // seq: zero-length chords are skipped, and their neighbours still meet at one welded vertex
       for (let i = 0; i + 1 < n; i++) {
         const a = 3 * i, b = a + 3;
         if (pts[a] === pts[b] && pts[a + 1] === pts[b + 1] && pts[a + 2] === pts[b + 2]) continue;
-        e.P.push(pts[a], pts[a + 1], pts[a + 2], pts[b], pts[b + 1], pts[b + 2]); e.L.push(c); col(e, rgb); e.S.push(id); stats.segments++;
+        e.P.push(pts[a], pts[a + 1], pts[a + 2], pts[b], pts[b + 1], pts[b + 2]); e.L.push(c); col(e, rgb); e.S.push(id); e.Q.push(q++); stats.segments++;
       }
     },
     point(l, rgb, x, y, z) { const e = get('points'); e.P.push(x, y, z); e.L.push(code(e, l)); col(e, rgb); stats.points++; },
@@ -303,10 +304,10 @@ async function convertDxf(chunks, writer, { name = 'dxf', spec = {}, dxf = null 
     for (const [kind, e] of Object.entries(els)) {
       const per = kind === 'triangles' ? 9 : kind === 'lines' ? 6 : 3;
       if (!e.P.length || (!force && e.P.length < per * BATCH$dxf)) continue;
-      const attrs = { layer: Int32Array.from(e.L), 'color.r': Uint8Array.from(e.R), 'color.g': Uint8Array.from(e.Gc), 'color.b': Uint8Array.from(e.B), ...(kind === 'lines' ? { string: Int32Array.from(e.S) } : {}) };
+      const attrs = { layer: Int32Array.from(e.L), 'color.r': Uint8Array.from(e.R), 'color.g': Uint8Array.from(e.Gc), 'color.b': Uint8Array.from(e.B), ...(kind === 'lines' ? { line: Int32Array.from(e.S), seq: Int32Array.from(e.Q) } : {}) };
       if (kind === 'points') await e.w.points(Float64Array.from(e.P), attrs);
       else await e.w.soup(Float64Array.from(e.P), attrs);
-      e.P = []; e.L = []; e.R = []; e.Gc = []; e.B = []; e.S = [];
+      e.P = []; e.L = []; e.R = []; e.Gc = []; e.B = []; e.S = []; e.Q = [];
     }
   };
   const st = createSceneStream(sink);

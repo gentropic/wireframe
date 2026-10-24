@@ -1,6 +1,7 @@
 // Reading .wfr files: open → manifest + per-element footers → bricks decoded on demand.
 import { openZip } from './zip.js';
 import { parseFooter, decodeChunk } from './parquet.js';
+import { chainPolylines } from './polylines.js';
 
 export const MIMETYPE = 'application/vnd.gentropic.wireframe';
 export const FORMAT_VERSION = '0.1';
@@ -100,6 +101,30 @@ class Element {
     const out = {};
     for (const c of cols) out[c.name] = decodeChunk(bytes.subarray(c.start - lo, c.start - lo + c.length), c);
     return out;
+  }
+
+  // A lines element's polylines, in order (SPEC §5: `line` + `seq`), world coordinates.
+  // → [{ line, vertices: Float64Array, vids: Int32Array, closed }]. Reads every brick.
+  async polylines() {
+    if (this.kind !== 'lines') throw new Error(`wfr: "${this.name}" is ${this.kind}, not lines`);
+    const cols = this.tables.cells.footer.rowGroups.length ? this.tables.cells.footer.rowGroups[0].columns.map((c) => c.name) : [];
+    if (cols.length && !(cols.includes('line') && cols.includes('seq'))) throw new Error(`wfr: "${this.name}" carries no polyline structure (no line/seq attributes)`);
+    const c = this.coords, s = c.mode === 'grid' ? (Array.isArray(c.step) ? c.step : [c.step, c.step, c.step]) : null;
+    const W = (v, a) => (s ? c.origin[a] + s[a] * v : v);
+    const n = this.meta.counts.cells;
+    const line = new Float64Array(n), seq = new Int32Array(n), va = new Int32Array(n), vb = new Int32Array(n), A = new Float64Array(3 * n), B = new Float64Array(3 * n);
+    let o = 0;
+    for (let k = 0; k < this.bricks; k++) {
+      const b = await this.readBrick(k, { vid: true });
+      const at = await this.readRowGroup('cells', k, ['line', 'seq']);
+      for (let i = 0; i < at.line.length; i++, o++) {
+        const ra = b.cells[2 * i], rb = b.cells[2 * i + 1];
+        line[o] = at.line[i]; seq[o] = at.seq[i]; va[o] = b.vid[ra]; vb[o] = b.vid[rb];
+        A[3 * o] = W(b.x[ra], 0); A[3 * o + 1] = W(b.y[ra], 1); A[3 * o + 2] = W(b.z[ra], 2);
+        B[3 * o] = W(b.x[rb], 0); B[3 * o + 1] = W(b.y[rb], 1); B[3 * o + 2] = W(b.z[rb], 2);
+      }
+    }
+    return chainPolylines({ line, seq, va, vb, A, B });
   }
 
   // Brick k → { x, y, z (stored units), vid?, cells (brick-LOCAL indices, interleaved) }.

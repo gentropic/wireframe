@@ -162,9 +162,25 @@ each list a fixed number of vertex rows:
 | `triangles` | `cells.parquet` | `a`, `b`, `c` | a face |
 
 Polylines are lines elements: a polyline is a chain of segments, and networks with branches
-(junctions where three or more segments meet) need no special case. Which polyline a segment
-belongs to, and any per-polyline property, is an ordinary attribute on cells. Arcs are densified
-into chords by writers.
+(junctions where three or more segments meet) need no special case. Arcs are densified into chords
+by writers.
+
+**Polyline identity and order.** Bricking sorts segments spatially, so a polyline's order cannot be
+recovered from geometry alone (a string that revisits a point has two ways out of it; a closed loop
+has no start). When segments come from polylines, writers MUST record them with two reserved cell
+attributes (§8):
+
+- `line` — which polyline the segment belongs to;
+- `seq` — the segment's position along that polyline, counting from 0.
+
+Within one `line`, `seq` values MUST be distinct and increase along the polyline, and each segment
+MUST start at the vertex where the previous one (by `seq`) ends (equal `vid`): a polyline is one
+unbroken chain, and a broken one is two lines. Gaps in `seq` are allowed — a writer that welds by
+position drops segments that collapse to a single vertex, and their neighbours still meet. Segment direction is the polyline's direction (`a` → `b`). A
+polyline is **closed** when its last segment ends at its first segment's start. To rebuild one:
+take its segments, sort by `seq`, and chain them. Per-polyline properties (a layer, a name) are
+ordinary cell attributes, repeated on each segment. A network without polyline structure (a
+fracture-trace map) simply omits `line` and `seq`.
 
 `"tets"` (`a`, `b`, `c`, `d`) is reserved for a future version. Faces with more than three
 vertices are triangulated by writers.
@@ -230,6 +246,8 @@ differ.
   not of the brick. They are not `vid`s.
 - A cell MUST NOT repeat a vertex row (`a`, `b`, `c` distinct). Readers SHOULD tolerate cells that
   are geometrically degenerate (distinct rows, coincident positions).
+- Cell order within the cells' corners is meaningful: a triangle's winding (§2), a segment's
+  direction (`a` → `b`). Writers MUST preserve both as the source gives them.
 
 ### 7.2 The brick invariant
 
@@ -311,6 +329,8 @@ An attribute is a Parquet column of values per row of one table.
 | `color.r`, `color.g`, `color.b`, `color.a` | either | colour, UINT8 (`a` optional) |
 | `normal.x`, `normal.y`, `normal.z` | vertices | unit normal |
 | `src_id` | either | the source's own identifier for the vertex or cell, for faithful round trips |
+| `line` | cells (lines) | INT32 or INT64: the polyline a segment belongs to (§5) |
+| `seq` | cells (lines) | INT32: the segment's position along its polyline, from 0 (§5); present only with `line` |
 | `uv.u`, `uv.v` | vertices | reserved for texture coordinates |
 
 ## 9. `meta`
