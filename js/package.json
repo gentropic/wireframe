@@ -1,0 +1,14 @@
+{
+  "name": "@gcu/wireframe",
+  "version": "0.0.1",
+  "description": "Reader and writer for .wfr — brick-aligned Parquet meshes in a stored ZIP, read by byte range",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "files": ["src/"],
+  "license": "MIT",
+  "author": "Arthur Endlein Correia",
+  "repository": { "type": "git", "url": "git+https://github.com/gentropic/wireframe.git", "directory": "js" },
+  "homepage": "https://github.com/gentropic/wireframe#readme",
+  "keywords": ["mesh", "wireframe", "parquet", "geology", "mining", "triangles"]
+}
