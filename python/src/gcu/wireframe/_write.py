@@ -58,19 +58,22 @@ def Points(name, points, **kw):
 
 
 # ── Morton (16 bits per axis → 48-bit key) ────────────────────────────────────────────────────────
-def _spread(q):
-    q = q.astype(np.uint64)
+def _spread_table():
+    q = np.arange(65536, dtype=np.uint64)
     out = np.zeros_like(q)
     for b in range(16):
         out |= ((q >> np.uint64(b)) & np.uint64(1)) << np.uint64(3 * b)
     return out
 
 
+_SPREAD = _spread_table()   # bit b of a 16-bit value → bit 3b: one gather per axis instead of a bit loop
+
+
 def _morton(x, y, z, bb):
     ext = max(bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2]) or 1
     s = 65535 / ext
-    q = [np.clip(np.floor((v - bb[a]) * s), 0, 65535) for a, v in enumerate((x, y, z))]
-    return _spread(q[0]) | (_spread(q[1]) << np.uint64(1)) | (_spread(q[2]) << np.uint64(2))
+    q = [np.clip(np.floor((v - bb[a]) * s), 0, 65535).astype(np.int64) for a, v in enumerate((x, y, z))]
+    return _SPREAD[q[0]] | (_SPREAD[q[1]] << np.uint64(1)) | (_SPREAD[q[2]] << np.uint64(2))
 
 
 def _js_round(x):
@@ -180,10 +183,9 @@ def _build(el: _Element):
         P = PF = V
     bb = [*(PF.min(axis=0) if nv else (0, 0, 0)), *(PF.max(axis=0) if nv else (0, 0, 0))]
     # keys: centroids (sequential sum, as the reference does) → Morton → optional group prefix
-    C = PF[cells]                                           # (m, k, 3)
-    cen = C[:, 0, :].copy()
+    cen = PF[cells[:, 0]]                                   # one corner at a time: no (m, k, 3) copy
     for j in range(1, k):
-        cen = cen + C[:, j, :]
+        cen = cen + PF[cells[:, j]]
     cen = cen / k
     key48 = _morton(cen[:, 0], cen[:, 1], cen[:, 2], bb) if m else np.zeros(0, np.uint64)
     group = np.zeros(m, np.int64)
@@ -223,21 +225,26 @@ def _build(el: _Element):
         V_count = int(ref.sum())
     # rows by first use within each brick
     sc = cells[order]                                       # (m, k) input vertex indices, brick order
-    brick_of_cell = np.empty(m, np.int64)
-    for b, (s0, e0) in enumerate(starts):
-        brick_of_cell[s0:e0] = b
+    # first-use rows, brick by brick, in linear time: scattering corner positions REVERSED leaves each
+    # vertex's FIRST position in the scratch array (numpy keeps the last write of a repeated index)
     corner_v = sc.ravel()
-    corner_b = np.repeat(brick_of_cell, k)
-    keyc = corner_b * (nv + 1) + corner_v
-    uk, first, inv = np.unique(keyc, return_index=True, return_inverse=True)
-    row_order = np.argsort(first, kind="stable")          # unique (brick, vertex) by first use
-    row_of_u = np.empty(len(uk), np.int64)
-    row_of_u[row_order] = np.arange(len(uk))
-    corner_row = row_of_u[inv]                              # global row of each corner
-    row_vertex = (uk[row_order] % (nv + 1)).astype(np.int64)
-    row_brick = (uk[row_order] // (nv + 1)).astype(np.int64)
-    n_rows = len(uk)
-    v_counts = np.bincount(row_brick, minlength=len(starts)).tolist() if n_rows else []
+    corner_row = np.empty(len(corner_v), np.int64)
+    first_pos = np.empty(nv, np.int64)
+    local_id = np.empty(nv, np.int64)
+    row_parts, v_counts, base = [], [], 0
+    for s0, e0 in starts:
+        cv = corner_v[s0 * k:e0 * k]
+        pos = np.arange(len(cv))
+        first_pos[cv[::-1]] = pos[::-1]
+        is_first = first_pos[cv] == pos
+        rows_v = cv[is_first]                               # this brick's vertices, by first use
+        local_id[rows_v] = np.arange(len(rows_v))
+        corner_row[s0 * k:e0 * k] = base + local_id[cv]
+        row_parts.append(rows_v)
+        v_counts.append(len(rows_v))
+        base += len(rows_v)
+    row_vertex = np.concatenate(row_parts) if row_parts else np.zeros(0, np.int64)
+    n_rows = base
     c_counts = [e0 - s0 for s0, e0 in starts]
     # tables
     kind_c = "grid" if grid else "f64c"

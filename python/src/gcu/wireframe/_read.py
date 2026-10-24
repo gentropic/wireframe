@@ -40,26 +40,23 @@ def _np(col):
 
 
 class Element:
+    """One element. Its Parquet footers are parsed lazily, the first time something needs them —
+    opening a file costs only the zip directory and the manifest."""
+
     def __init__(self, wfr, meta):
         self._wfr, self.meta = wfr, meta
         self.name, self.kind = meta["name"], meta["kind"]
         self.coords, self.counts = meta["coords"], meta["counts"]
         self.topology, self.bbox = meta.get("topology"), meta.get("bbox")
-        self.tables = {}
+        self._members = {}
         for t in (["vertices"] if self.kind == "points" else ["vertices", "cells"]):
             m = wfr._members.get(meta["path"] + t + ".parquet")
             if m is None:
                 raise ValueError(f"wfr: element {self.name!r} lacks {t}.parquet")
             if m.method != 0:
                 raise ValueError(f"wfr: member {m.name} is compressed; .wfr members are stored")
-            self.tables[t] = pq.ParquetFile(pa.BufferReader(wfr._map.read_at(m.size, m.offset)))
-        self.n_bricks = self.tables["vertices"].metadata.num_row_groups
-        if "cells" in self.tables and self.tables["cells"].metadata.num_row_groups != self.n_bricks:
-            raise ValueError(f"wfr: element {self.name!r} breaks the brick invariant (row-group counts differ)")
-        rows = [self.tables["vertices"].metadata.row_group(k).num_rows for k in range(self.n_bricks)]
-        self.v_start = np.concatenate([[0], np.cumsum(rows)]).astype(np.int64)
-        names = self.tables["vertices"].schema_arrow.names
-        self._vcol = {n: i for i, n in enumerate(names)}
+            self._members[t] = m
+        self._tables = None
         if self.coords["mode"] == "grid":
             st = self.coords["step"]
             self._step = np.array(st if isinstance(st, (list, tuple)) else [st] * 3, np.float64)
@@ -67,8 +64,33 @@ class Element:
         else:
             self._step = self._origin = None
 
+    @property
+    def tables(self) -> dict:
+        """{'vertices': ParquetFile, 'cells': ParquetFile} — footers parsed on first access."""
+        if self._tables is None:
+            mp = self._wfr._map
+            tabs = {t: pq.ParquetFile(pa.BufferReader(mp.read_at(m.size, m.offset))) for t, m in self._members.items()}
+            nb = tabs["vertices"].metadata.num_row_groups
+            if "cells" in tabs and tabs["cells"].metadata.num_row_groups != nb:
+                raise ValueError(f"wfr: element {self.name!r} breaks the brick invariant (row-group counts differ)")
+            rows = [tabs["vertices"].metadata.row_group(k).num_rows for k in range(nb)]
+            self._v_start = np.concatenate([[0], np.cumsum(rows)]).astype(np.int64)
+            self._vcol = {n: i for i, n in enumerate(tabs["vertices"].schema_arrow.names)}
+            self._tables = tabs
+        return self._tables
+
+    @property
+    def n_bricks(self) -> int:
+        return self.tables["vertices"].metadata.num_row_groups
+
+    @property
+    def v_start(self):
+        """First vertex row of each brick (and the total, last)."""
+        self.tables
+        return self._v_start
+
     def __repr__(self):
-        return f"<wfr element {self.name!r} {self.kind}: {self.counts.get('cells', 0)} cells, {self.counts['vertices']} vertices, {self.n_bricks} bricks>"
+        return f"<wfr element {self.name!r} {self.kind}: {self.counts.get('cells', 0)} cells, {self.counts['vertices']} vertices, {self.counts['bricks']} bricks>"
 
     def _world(self, x, y, z):
         P = np.stack([x, y, z], axis=1).astype(np.float64)
@@ -76,7 +98,7 @@ class Element:
 
     def brick_bbox(self, k):
         """World [minx, miny, minz, maxx, maxy, maxz] of brick k, from the footer statistics alone."""
-        rg = self.tables["vertices"].metadata.row_group(k)
+        rg = self.tables["vertices"].metadata.row_group(k)   # (self.tables also fills _vcol)
         lo, hi = [], []
         for a in "xyz":
             st = rg.column(self._vcol[a]).statistics
@@ -97,49 +119,47 @@ class Element:
         return pf.read_row_groups(list(range(self.n_bricks)) if bricks is None else list(bricks), columns=columns)
 
     def read_brick(self, k, vid=True, attributes=True) -> Brick:
-        vt = self.tables["vertices"].read_row_group(k)
+        # one brick is a small read: pyarrow's thread pool costs more than it saves here
+        vt = self.tables["vertices"].read_row_group(k, use_threads=False)
         pos = self._world(vt.column("x").to_numpy(), vt.column("y").to_numpy(), vt.column("z").to_numpy())
         v = vt.column("vid").to_numpy() if (vid and "vid" in vt.column_names) else None
         va = {n: _np(vt.column(n)) for n in vt.column_names if n not in _CORE} if attributes else {}
         cells, ca = None, {}
         if self.kind != "points":
-            ct = self.tables["cells"].read_row_group(k)
+            ct = self.tables["cells"].read_row_group(k, use_threads=False)
             cols = _CELL_COLS[self.kind]
             cells = np.stack([ct.column(c).to_numpy() for c in cols], axis=1).astype(np.int64) - self.v_start[k]
             ca = {n: _np(ct.column(n)) for n in ct.column_names if n not in _CORE} if attributes else {}
         return Brick(pos, v, cells, va, ca)
 
     def to_mesh(self, attributes=True) -> Mesh:
-        """The whole element, welded: vertices at their vid, cells as vid tuples (resident)."""
+        """The whole element, welded: vertices at their vid, cells as vid tuples (resident).
+        Whole tables in one threaded read each, then a vectorized scatter — cells hold GLOBAL vertex
+        rows, so vid[cell] is each corner's identity without any per-brick work."""
+        vnames = self.tables["vertices"].schema_arrow.names
+        keep = [n for n in vnames if n in ("x", "y", "z", "vid") or (attributes and n not in _CORE)]
+        vt = self.tables["vertices"].read(columns=keep)
+        pos = self._world(vt.column("x").to_numpy(), vt.column("y").to_numpy(), vt.column("z").to_numpy())
+        vattr = {n: _np(vt.column(n)) for n in keep if n not in _CORE}
+        if "vid" not in vt.column_names:                    # points without vid: identity = row
+            return Mesh(pos, None, vattr, {})
+        vid = vt.column("vid").to_numpy().astype(np.int64)
         V = self.counts["vertices"]
-        if self.kind == "points":
-            bricks = [self.read_brick(k, attributes=attributes) for k in range(self.n_bricks)]
-            P = np.concatenate([b.positions for b in bricks]) if bricks else np.zeros((0, 3))
-            if bricks and bricks[0].vid is not None:
-                vid = np.concatenate([b.vid for b in bricks]).astype(np.int64)
-                order = np.argsort(vid)
-                P = P[order]
-            else:
-                order = None
-            va = {n: (np.concatenate([b.vertex_attributes[n] for b in bricks]) if bricks else np.zeros(0)) for n in (bricks[0].vertex_attributes if bricks else {})}
-            if order is not None:
-                va = {n: a[order] for n, a in va.items()}
-            return Mesh(P, None, va, {})
         verts = np.full((V, 3), np.nan)
-        va, ca_parts, cells_parts = {}, {}, []
-        for k in range(self.n_bricks):
-            b = self.read_brick(k, attributes=attributes)
-            verts[b.vid] = b.positions
-            for n, a in b.vertex_attributes.items():
-                if n not in va:
-                    va[n] = np.empty(V, dtype=a.dtype)
-                va[n][b.vid] = a
-            cells_parts.append(b.vid[b.cells])
-            for n, a in b.cell_attributes.items():
-                ca_parts.setdefault(n, []).append(a)
-        k = len(_CELL_COLS[self.kind])
-        cells = np.concatenate(cells_parts) if cells_parts else np.zeros((0, k), np.int64)
-        return Mesh(verts, cells, va, {n: np.concatenate(p) for n, p in ca_parts.items()})
+        verts[vid] = pos
+        va = {}
+        for n, a in vattr.items():
+            dst = np.empty(V, dtype=a.dtype)
+            dst[vid] = a
+            va[n] = dst
+        if self.kind == "points":
+            return Mesh(verts, None, va, {})
+        cols = _CELL_COLS[self.kind]
+        cnames = self.tables["cells"].schema_arrow.names
+        ct = self.tables["cells"].read(columns=[*cols, *([n for n in cnames if n not in _CORE] if attributes else [])])
+        cells = vid[np.stack([ct.column(c).to_numpy() for c in cols], axis=1)]
+        ca = {n: _np(ct.column(n)) for n in ct.column_names if n not in _CORE}
+        return Mesh(verts, cells, va, ca)
 
     def to_pyvista(self):
         """A pyvista PolyData (needs `pip install gcu-wireframe[pyvista]`)."""
